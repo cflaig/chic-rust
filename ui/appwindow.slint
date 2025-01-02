@@ -1,0 +1,38 @@
+struct Field {
+    image: image,
+}
+
+component ChessField inherits Rectangle {
+    callback clicked;
+    in property <image> icon;
+
+    width: 64px;
+    height: 64px;
+
+    Image {
+        source: icon;
+        height: parent.height*0.8;
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    min-width: 512px;
+    min-height: 512px;
+
+    in property <[Field]> chess_fields: [];
+
+    for chess_field[i] in chess_fields: ChessField {
+        x: mod(i, 8) * min(parent.width, parent.height) / 8;
+        y: (7 - floor(i/8)) * min(parent.width, parent.height) / 8;
+        width: min(parent.width, parent.height) / 8;
+        height: min(parent.width, parent.height) / 8;
+        background: mod(i + floor(i/8), 2) == 0 ? #7F461B: #C8B195;
+        icon: chess_field.image;
+    }
+}
