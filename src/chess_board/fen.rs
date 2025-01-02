@@ -1,14 +1,14 @@
-use super::{ChessBoard, Color, Piece, PieceType, Square};
+use super::{ChessBoard, ChessField, Color, Piece, PieceType, Square};
 
 /// Parses a square like "e3" into (file, rank).
-fn parse_square(square: &str) -> Result<(usize, usize), String> {
+fn parse_square(square: &str) -> Result<ChessField, String> {
     if square.len() != 2 {
         return Err(format!("Invalid square: {}", square));
     }
     let file = square.chars().next().unwrap() as usize;
     let rank = square.chars().nth(1).unwrap() as usize;
     if ('a'..='h').contains(&(file as u8 as char)) && ('1'..='8').contains(&(rank as u8 as char)) {
-        Ok(((file - 'a' as usize), (rank - '1' as usize)))
+        Ok(ChessField::new(rank - '1' as usize, file - 'a' as usize))
     } else {
         Err(format!("Invalid square: {}", square))
     }
@@ -55,8 +55,7 @@ pub fn from_fen(fen: &str) -> Result<ChessBoard, String> {
                 };
 
                 if let Some((color, kind)) = piece {
-                    board.squares[7 - row_index][col_index] =
-                        Square::Occupied(Piece { color, kind });
+                    board.squares[7 - row_index][col_index] = Square::Occupied(Piece { color, kind });
                     col_index += 1;
                 } else {
                     return Err(format!("Invalid piece character in FEN string: {}", c));
@@ -64,10 +63,7 @@ pub fn from_fen(fen: &str) -> Result<ChessBoard, String> {
             }
         }
         if col_index > 8 {
-            return Err(format!(
-                "Too many squares in row {} when parsing FEN",
-                row_index
-            ));
+            return Err(format!("Too many squares in row {} when parsing FEN", row_index));
         }
     }
 
@@ -94,12 +90,9 @@ pub fn from_fen(fen: &str) -> Result<ChessBoard, String> {
     };
 
     // Parse halfmove clock
-    board.halfmove_clock = parts[4].parse::<u32>().map_err(|_| {
-        format!(
-            "Invalid FEN string: halfmove clock is not a valid number: {}",
-            parts[4]
-        )
-    })?;
+    board.halfmove_clock = parts[4]
+        .parse::<u32>()
+        .map_err(|_| format!("Invalid FEN string: halfmove clock is not a valid number: {}", parts[4]))?;
 
     // Parse fullmove number
     board.fullmove_number = parts[5].parse::<u32>().map_err(|_| {
@@ -134,8 +127,7 @@ mod test {
 
     #[test]
     fn fen_one_pawn() {
-        let board =
-            ChessBoard::from_fen("8/8/8/8/8/8/8/P7 w - - 0 1").expect("Failed to parse FEN");
+        let board = ChessBoard::from_fen("8/8/8/8/8/8/8/P7 w - - 0 1").expect("Failed to parse FEN");
         assert_eq!(
             board.squares[0][0],
             Square::Occupied(Piece {
@@ -147,8 +139,7 @@ mod test {
 
     #[test]
     fn fen_two_pawns() {
-        let board =
-            ChessBoard::from_fen("8/8/8/8/8/8/8/P3P3 w - - 0 1").expect("Failed to parse FEN");
+        let board = ChessBoard::from_fen("8/8/8/8/8/8/8/P3P3 w - - 0 1").expect("Failed to parse FEN");
 
         assert_eq!(
             board.squares[0][0],
@@ -168,9 +159,8 @@ mod test {
 
     #[test]
     fn fen_initial_board() {
-        let board =
-            ChessBoard::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-                .expect("Failed to parse FEN");
+        let board = ChessBoard::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .expect("Failed to parse FEN");
 
         for col in 0..8 {
             assert_eq!(
@@ -240,7 +230,7 @@ mod test {
         let board = ChessBoard::from_fen(fen).expect("Failed to parse FEN");
 
         assert_eq!(board.active_color, Color::Black);
-        assert_eq!(board.en_passant, Some((5, 2))); // En passant square: f3
+        assert_eq!(board.en_passant, Some(ChessField::from_algebraic("f3"))); // En passant square: f3
     }
 
     #[test]

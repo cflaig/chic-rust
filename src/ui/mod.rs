@@ -1,6 +1,6 @@
 use crate::chess_board::{ChessBoard, Color, PieceType, Square};
-use crate::Field;
 use crate::ModelRc;
+use crate::UiField;
 use slint::{Image, VecModel};
 use std::path::Path;
 // Constants for piece images
@@ -18,9 +18,9 @@ pub const WHITE_QUEEN: &str = "ui/icons/Piece_White_Queen.svg";
 pub const WHITE_ROOK: &str = "ui/icons/Piece_White_Rock.svg";
 
 /// Maps a `ChessBoard` to a UI-compatible VecModel representation
-pub fn map_chessboard_to_ui(chess_board: &ChessBoard) -> ModelRc<Field> {
+pub fn map_chessboard_to_ui(chess_board: &ChessBoard) -> ModelRc<UiField> {
     let mut pieces = vec![
-        Field {
+        UiField {
             image: Image::default()
         };
         64
@@ -54,9 +54,9 @@ pub fn map_chessboard_to_ui(chess_board: &ChessBoard) -> ModelRc<Field> {
 }
 
 /// Helper function to load a piece as a `Field` object
-fn create_piece(piece_svg: &str) -> Field {
+fn create_piece(piece_svg: &str) -> UiField {
     let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join(piece_svg);
-    Field {
+    UiField {
         image: Image::load_from_path(&path_buf).unwrap(),
     }
 }

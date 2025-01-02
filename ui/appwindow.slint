@@ -1,4 +1,4 @@
-struct Field {
+struct UiField {
     image: image,
 }
 
@@ -25,7 +25,7 @@ export component MainWindow inherits Window {
     min-width: 512px;
     min-height: 512px;
 
-    in property <[Field]> chess_fields: [];
+    in property <[UiField]> chess_fields: [];
 
     for chess_field[i] in chess_fields: ChessField {
         x: mod(i, 8) * min(parent.width, parent.height) / 8;
