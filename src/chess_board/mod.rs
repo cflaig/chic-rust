@@ -1,12 +1,12 @@
 pub mod fen;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     White,
     Black,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PieceType {
     Pawn,
     Knight,
@@ -102,13 +102,13 @@ impl ChessBoard {
         for row in 0..8 {
             for col in 0..8 {
                 // Only process pieces of the active color
-                all_moves.extend(self.generate_pseudo_moves_form_position(row, col));
+                all_moves.extend(self.generate_pseudo_moves_from_position(row, col));
             }
         }
         all_moves
     }
 
-    pub fn generate_pseudo_moves_form_position(&self, row: usize, col: usize) -> Vec<Move> {
+    pub fn generate_pseudo_moves_from_position(&self, row: usize, col: usize) -> Vec<Move> {
         if let Square::Occupied(piece) = self.squares[row][col] {
             if piece.color == self.active_color {
                 let r = match piece.kind {
@@ -284,6 +284,18 @@ impl ChessBoard {
         moves
     }
 
+    pub fn make_move(&mut self, mv: Move) {
+        let piece = self.squares[mv.from.row][mv.from.col];
+        self.squares[mv.from.row][mv.from.col] = Square::Empty;
+        self.squares[mv.to.row][mv.to.col] = piece;
+
+        // Switch the active color after a move
+        self.active_color = match self.active_color {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        };
+    }
+
     fn is_square_attacked(&self, row: usize, col: usize) -> bool {
         let opponent_color = match self.active_color {
             Color::White => Color::Black,
@@ -406,12 +418,12 @@ mod tests {
     use super::*;
     impl ChessBoard {
         /// Creates an empty chess board
-        pub fn generate_pseudo_moves_form_chess_field(&self, pos: ChessField) -> Vec<Move> {
-            self.generate_pseudo_moves_form_position(pos.row, pos.col)
+        pub fn generate_pseudo_moves_from_chess_field(&self, pos: ChessField) -> Vec<Move> {
+            self.generate_pseudo_moves_from_position(pos.row, pos.col)
         }
 
         pub fn generate_pseudo_moves_from_algebraic(&self, square: &str) -> Vec<Move> {
-            self.generate_pseudo_moves_form_chess_field(ChessField::from_algebraic(square))
+            self.generate_pseudo_moves_from_chess_field(ChessField::from_algebraic(square))
         }
     }
 

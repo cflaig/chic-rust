@@ -1,10 +1,13 @@
 struct UiField {
     image: image,
+    highlighted_for_move: bool,
 }
 
 component ChessField inherits Rectangle {
-    callback clicked;
+    callback clicked(int);
     in property <image> icon;
+    in property <bool> highlighted_for_move;
+    in property <int> index;
 
     width: 64px;
     height: 64px;
@@ -14,9 +17,16 @@ component ChessField inherits Rectangle {
         height: parent.height*0.8;
     }
 
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: highlighted_for_move ? #FFFF0060 : transparent;
+    }
+
+
     TouchArea {
         clicked => {
-            root.clicked();
+            root.clicked(index);
         }
     }
 }
@@ -25,6 +35,7 @@ export component MainWindow inherits Window {
     min-width: 512px;
     min-height: 512px;
 
+    callback clicked(int);
     in property <[UiField]> chess_fields: [];
 
     for chess_field[i] in chess_fields: ChessField {
@@ -34,5 +45,10 @@ export component MainWindow inherits Window {
         height: min(parent.width, parent.height) / 8;
         background: mod(i + floor(i/8), 2) == 0 ? #7F461B: #C8B195;
         icon: chess_field.image;
+        highlighted_for_move: chess_field.highlighted_for_move;
+        index: i;
+        clicked => {
+            root.clicked(i);
+        }
     }
 }
