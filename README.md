@@ -11,17 +11,36 @@ This project is designed to visualize a chessboard. It is built as a beginner-le
    Once this is done, you should have the `rustc` compiler and the `cargo` build system installed in your `PATH`. Ensure that you have Rust installed on your system. You can verify the installation by running `cargo --version` and `rustc --version` in your terminal.
 2. Clone the [repository](https://github.com/cflaig/chess-ui) or download and extract the [ZIP archive of this repository](https://github.com/cflaig/chess-ui/archive/refs/heads/main.zip).
 3. Change into the Project:
-    ```
-    cd chess-ui  
+    ```bash
+    cd chess-rust  
     ```
 4. Build with `cargo`:
-    ```
+    ```bash
     cargo build
     ```
 5. Run the application binary:
-    ```
+    ```bash
     cargo run
     ```
+
+## Running in a Browser
+
+1. Install `wasm-pack` with Cargo:
+   ```bash
+   cargo install wasm-pack
+   ```
+2. Build the `chic-rust` project for the `wasm32` target:
+   ```bash
+   wasm-pack build --release --target web
+   ```
+3. Host the project using a web server:
+   Browsers don't allow loading JavaScript modules from the `file://` protocol. You can use Python to serve the `index.html` file:
+   ```bash
+   python3 -m http.server
+   ```
+   Once started, the project will be accessible in your browser at [http://localhost:8000](http://localhost:8000).
+
+
 ## Features
 - 🏁 Display a chessboard based on a FEN string.
 - ✨ Uses Scalable Vector Graphics (SVG) for piece images for a sharp and clean interface.

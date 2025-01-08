@@ -50,6 +50,8 @@ fn square_to_ui_field(square: &Square) -> UiField {
 
 fn create_piece(piece_svg: &str) -> UiField {
     let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join(piece_svg);
+    let path_buf = Path::new(piece_svg);
+
     UiField {
         image: Image::load_from_path(&path_buf).unwrap(),
         highlighted_for_move: false,
