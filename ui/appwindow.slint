@@ -14,7 +14,7 @@ component ChessField inherits Rectangle {
 
     Image {
         source: icon;
-        height: parent.height*0.8;
+        height: parent.height*0.75;
     }
 
     Rectangle {
@@ -43,7 +43,7 @@ export component MainWindow inherits Window {
         y: (7 - floor(i/8)) * min(parent.width, parent.height) / 8;
         width: min(parent.width, parent.height) / 8;
         height: min(parent.width, parent.height) / 8;
-        background: mod(i + floor(i/8), 2) == 0 ? #7F461B: #C8B195;
+        background: mod(i + floor(i/8), 2) == 0 ? #AE8A68: #ECDAB9;
         icon: chess_field.image;
         highlighted_for_move: chess_field.highlighted_for_move;
         index: i;
