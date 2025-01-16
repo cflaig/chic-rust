@@ -285,9 +285,48 @@ impl ChessBoard {
     }
 
     pub fn make_move(&mut self, mv: Move) {
+        self.en_passant = None;
+
         let piece = self.squares[mv.from.row][mv.from.col];
         self.squares[mv.from.row][mv.from.col] = Square::Empty;
         self.squares[mv.to.row][mv.to.col] = piece;
+
+        // Check if the move is a castling move and if castling is allowed
+        let row = mv.to.row;
+        if mv == Move::new(row, 4, row, 6) {
+            // Kingside castling
+            if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
+                let rook_col = 7;
+                self.squares[row][5] = self.squares[row][rook_col];
+                self.squares[row][rook_col] = Square::Empty;
+                self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
+                self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
+            }
+        } else if mv == Move::new(row, 4, row, 2) {
+            // Queenside castling
+            if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
+                let rook_col = 0;
+                self.squares[row][3] = self.squares[row][rook_col];
+                self.squares[row][rook_col] = Square::Empty;
+                self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
+                self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
+            }
+        }
+
+        match piece {
+            Square::Empty => {}
+            Square::Occupied(p) => {
+                if p.kind == PieceType::Pawn {
+                    let origin_row = match p.color {
+                        Color::White => 1,
+                        Color::Black => 6,
+                    };
+                    if mv.from.row == origin_row {
+                        self.en_passant = Some(ChessField::new((origin_row + mv.to.row) / 2, mv.from.col));
+                    }
+                }
+            }
+        }
 
         // Switch the active color after a move
         self.active_color = match self.active_color {
@@ -746,5 +785,109 @@ mod tests {
             board.generate_pseudo_moves_from_algebraic("e8"),
             vec!["e8d8", "e8f7", "e8f8"],
         ); //f7,f8 are pseudo legal moves
+    }
+
+    #[test]
+    fn test_make_move_set_en_passant_legal() {
+        let mut board = ChessBoard::from_fen("8/4p3/8/3P4/8/8/8/8 b - - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e7e5"));
+        let expected_moves = vec!["d5d6", "d5e6"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves);
+
+        let mut board = ChessBoard::from_fen("8/8/8/8/6p1/8/5P2/8 w - - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("f2f4"));
+        let expected_moves = vec!["g4g3", "g4f3"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("g4"), expected_moves);
+    }
+
+    #[test]
+    fn test_make_move_castling() {
+        let mut board = ChessBoard::from_fen("rnbqk2r/ppp2pbp/3p1np1/4p3/8/8/PPPPPPPP/R3K2R w KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e1g1"));
+        assert_eq!(
+            board.squares[0][6],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::King
+            })
+        );
+        assert_eq!(
+            board.squares[0][5],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::Rook
+            })
+        );
+        assert_eq!(board.castling_rights[0], false);
+        assert_eq!(board.castling_rights[1], false);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+
+        let mut board = ChessBoard::from_fen("rnbqk2r/ppp2pbp/3p1np1/4p3/8/8/PPPPPPPP/R3K2R w KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e1c1"));
+        assert_eq!(
+            board.squares[0][2],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::King
+            })
+        );
+        assert_eq!(
+            board.squares[0][3],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::Rook
+            })
+        );
+        assert_eq!(board.castling_rights[0], false);
+        assert_eq!(board.castling_rights[1], false);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e8g8"));
+        assert_eq!(
+            board.squares[7][6],
+            Square::Occupied(Piece {
+                color: Color::Black,
+                kind: PieceType::King
+            })
+        );
+        assert_eq!(
+            board.squares[7][5],
+            Square::Occupied(Piece {
+                color: Color::Black,
+                kind: PieceType::Rook
+            })
+        );
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], false);
+        assert_eq!(board.castling_rights[3], false);
+        assert_eq!(board.en_passant, None);
+
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e8c8"));
+        assert_eq!(
+            board.squares[7][2],
+            Square::Occupied(Piece {
+                color: Color::Black,
+                kind: PieceType::King
+            })
+        );
+        assert_eq!(
+            board.squares[7][3],
+            Square::Occupied(Piece {
+                color: Color::Black,
+                kind: PieceType::Rook
+            })
+        );
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], false);
+        assert_eq!(board.castling_rights[3], false);
+        assert_eq!(board.en_passant, None);
     }
 }
