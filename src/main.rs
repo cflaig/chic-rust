@@ -9,8 +9,7 @@ use ui::setup_ui;
 
 slint::include_modules!();
 
-#[cfg_attr(target_arch = "wasm32",
-           wasm_bindgen::prelude::wasm_bindgen(start))]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen(start))]
 fn main() {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
