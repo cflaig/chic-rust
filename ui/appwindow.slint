@@ -31,12 +31,46 @@ component ChessField inherits Rectangle {
     }
 }
 
+component PromotionDialog inherits Rectangle {
+    in property <[UiField]> promotion_choices;
+    callback piece_selected(int);
+
+    width: 320px;
+    height: 320px;
+    background: #FFFFFFAA; // Semi-transparent white background
+
+    for choice[i] in promotion_choices: Rectangle {
+        width: parent.width / 5;
+        height: parent.height / 5;
+        x: i * (parent.width / 5);
+        background: white;
+        border-radius: 10px;
+
+        Image {
+            source: choice.image;
+            height: parent.height * 0.75;
+        }
+
+        TouchArea {
+            clicked => {
+                root.piece_selected(i);
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     min-width: 512px;
     min-height: 512px;
 
     callback clicked(int);
     in property <[UiField]> chess_fields: [];
+
+        in property <[UiField]> promotion_choices: [];
+        in property <bool> promotion_dialog_visible: false;
+        callback promotion_selected(int);
+
+
 
     for chess_field[i] in chess_fields: ChessField {
         x: mod(i, 8) * min(parent.width, parent.height) / 8;
@@ -49,6 +83,13 @@ export component MainWindow inherits Window {
         index: i;
         clicked => {
             root.clicked(i);
+        }
+    }
+    PromotionDialog {
+        promotion_choices: root.promotion_choices;
+        visible: root.promotion_dialog_visible;
+        piece_selected(index) => {
+            root.promotion_selected(index);
         }
     }
 }

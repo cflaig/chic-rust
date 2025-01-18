@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub mod fen;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -6,7 +8,7 @@ pub enum Color {
     Black,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum PieceType {
     Pawn,
     Knight,
@@ -38,6 +40,20 @@ pub struct ChessField {
 pub struct Move {
     pub from: ChessField,
     pub to: ChessField,
+    pub promotion: Option<PieceType>,
+}
+
+impl fmt::Display for PieceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PieceType::Pawn => write!(f, "P"),
+            PieceType::Knight => write!(f, "N"),
+            PieceType::Bishop => write!(f, "B"),
+            PieceType::Rook => write!(f, "R"),
+            PieceType::Queen => write!(f, "Q"),
+            PieceType::King => write!(f, "K"),
+        }
+    }
 }
 
 impl ChessField {
@@ -51,15 +67,26 @@ impl Move {
         Self {
             from: ChessField::new(from_row, from_col),
             to: ChessField::new(to_row, to_col),
+            promotion: None,
         }
     }
 
+    pub fn with_promotion(mut self, promotion: PieceType) -> Self {
+        self.promotion = Some(promotion);
+        self
+    }
+
     pub fn as_algebraic(&self) -> String {
-        format!(
+        let base_move = format!(
             "{}{}",
             to_algebraic_square(self.from.row, self.from.col),
             to_algebraic_square(self.to.row, self.to.col)
-        )
+        );
+        if let Some(promo) = self.promotion {
+            base_move + &promo.to_string()
+        } else {
+            base_move
+        }
     }
 }
 
@@ -69,6 +96,7 @@ fn to_algebraic_square(row: usize, col: usize) -> String {
     format!("{}{}", file, rank) // Combine file and rank into a string
 }
 
+#[derive(Clone)]
 pub struct ChessBoard {
     pub squares: [[Square; 8]; 8],
     pub active_color: Color,
@@ -146,12 +174,7 @@ impl ChessBoard {
 
         // Regular forward move
         if self.squares[new_row][col] == Square::Empty {
-            if new_row == promotion_row {
-                // Add all possible promotions
-                moves.push(Move::new(row, col, new_row, col)); // Promotion
-            } else {
-                moves.push(Move::new(row, col, new_row, col));
-            }
+            Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, col, promotion_row, &mut moves);
 
             // Double move from start position
             if row == start_row {
@@ -171,7 +194,7 @@ impl ChessBoard {
             let new_col = (col as isize + dx) as usize;
             if let Square::Occupied(opponent_piece) = self.squares[new_row][new_col] {
                 if opponent_piece.color != self.active_color {
-                    moves.push(Move::new(row, col, new_row, new_col));
+                    Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, new_col, promotion_row, &mut moves);
                 }
             }
         }
@@ -184,6 +207,16 @@ impl ChessBoard {
         }
 
         moves
+    }
+
+    fn add_pawn_moves_with_and_without_promotion(row: usize, col: usize, new_row: usize, new_col: usize, promotion_row: usize, moves: &mut Vec<Move>) {
+        if new_row == promotion_row {
+            for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
+                moves.push(Move::new(row, col, new_row, new_col).with_promotion(promotion_piece));
+            }
+        } else {
+            moves.push(Move::new(row, col, new_row, new_col));
+        }
     }
 
     /// Generate knight moves.
@@ -288,41 +321,45 @@ impl ChessBoard {
         self.en_passant = None;
 
         let piece = self.squares[mv.from.row][mv.from.col];
-        self.squares[mv.from.row][mv.from.col] = Square::Empty;
-        self.squares[mv.to.row][mv.to.col] = piece;
-
-        // Check if the move is a castling move and if castling is allowed
-        let row = mv.to.row;
-        if mv == Move::new(row, 4, row, 6) {
-            // Kingside castling
-            if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
-                let rook_col = 7;
-                self.squares[row][5] = self.squares[row][rook_col];
-                self.squares[row][rook_col] = Square::Empty;
-                self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
-                self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
-            }
-        } else if mv == Move::new(row, 4, row, 2) {
-            // Queenside castling
-            if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
-                let rook_col = 0;
-                self.squares[row][3] = self.squares[row][rook_col];
-                self.squares[row][rook_col] = Square::Empty;
-                self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
-                self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
-            }
-        }
 
         match piece {
             Square::Empty => {}
             Square::Occupied(p) => {
+                self.squares[mv.from.row][mv.from.col] = Square::Empty;
+                self.squares[mv.to.row][mv.to.col] = piece;
+                // Check if the move is a castling move and if castling is allowed
+                let row = mv.to.row;
+                if mv == Move::new(row, 4, row, 6) {
+                    // Kingside castling
+                    if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
+                        let rook_col = 7;
+                        self.squares[row][5] = self.squares[row][rook_col];
+                        self.squares[row][rook_col] = Square::Empty;
+                        self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
+                        self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
+                    }
+                } else if mv == Move::new(row, 4, row, 2) {
+                    // Queenside castling
+                    if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
+                        let rook_col = 0;
+                        self.squares[row][3] = self.squares[row][rook_col];
+                        self.squares[row][rook_col] = Square::Empty;
+                        self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
+                        self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
+                    }
+                }
+
                 if p.kind == PieceType::Pawn {
-                    let origin_row = match p.color {
-                        Color::White => 1,
-                        Color::Black => 6,
-                    };
-                    if mv.from.row == origin_row {
-                        self.en_passant = Some(ChessField::new((origin_row + mv.to.row) / 2, mv.from.col));
+                    if p.color == Color::White && mv.from.row == 1 && mv.to.row == 3 {
+                        self.en_passant = Some(ChessField::new(2, mv.from.col));
+                    } else if p.color == Color::Black && mv.from.row == 6 && mv.to.row == 4 {
+                        self.en_passant = Some(ChessField::new(5, mv.from.col));
+                    } else if mv.promotion.is_some() {
+                        // Handle promotion
+                        self.squares[mv.to.row][mv.to.col] = Square::Occupied(Piece {
+                            color: p.color,
+                            kind: mv.promotion.unwrap(), // Replace the pawn with the promoted piece
+                        });
                     }
                 }
             }
@@ -455,6 +492,7 @@ impl ChessBoard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chess_board::Square::Occupied;
     impl ChessBoard {
         /// Creates an empty chess board
         pub fn generate_pseudo_moves_from_chess_field(&self, pos: ChessField) -> Vec<Move> {
@@ -479,9 +517,22 @@ mod tests {
         pub fn from_algebraic(algebraic: &str) -> Self {
             let from = from_algebraic_square(&algebraic[0..2]);
             let to = from_algebraic_square(&algebraic[2..4]);
+
+            let promotion = if algebraic.len() > 4 {
+                match algebraic.chars().nth(4) {
+                    Some('Q') => Some(PieceType::Queen),
+                    Some('R') => Some(PieceType::Rook),
+                    Some('B') => Some(PieceType::Bishop),
+                    Some('N') => Some(PieceType::Knight),
+                    _ => None,
+                }
+            } else {
+                None // No promotion if the move string is only 4 characters
+            };
             Self {
                 from: ChessField::new(from.0, from.1),
                 to: ChessField::new(to.0, to.1),
+                promotion,
             }
         }
     }
@@ -563,6 +614,27 @@ mod tests {
         assert_moves(
             board.generate_pseudo_moves_from_algebraic("b7"),
             vec!["b7b6", "b7b5", "b7a6", "b7c6"],
+        );
+
+        // Test white promotion
+        let board = ChessBoard::from_fen("8/6P1/8/8/8/8/8/8 w - - 0 1").unwrap();
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("g7"),
+            vec!["g7g8Q", "g7g8R", "g7g8B", "g7g8N"],
+        );
+
+        // Test black promotion
+        let board = ChessBoard::from_fen("3r4/2P5/8/8/8/8/8/8 w - - 0 1").unwrap();
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("c7"),
+            vec!["c7c8B", "c7c8N", "c7c8R", "c7c8Q", "c7d8B", "c7d8N", "c7d8R", "c7d8Q"],
+        );
+
+        // Test black promotion
+        let board = ChessBoard::from_fen("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/5N2/Pp3P2/2R2K2 b k - 1 27").unwrap();
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("b2"),
+            vec!["b2b1B", "b2b1N", "b2b1Q", "b2b1R", "b2c1B", "b2c1N", "b2c1R", "b2c1Q"],
         );
     }
 
@@ -798,6 +870,24 @@ mod tests {
         board.make_move(Move::from_algebraic("f2f4"));
         let expected_moves = vec!["g4g3", "g4f3"];
         assert_moves(board.generate_pseudo_moves_from_algebraic("g4"), expected_moves);
+
+        let mut board = ChessBoard::from_fen("8/8/1p6/8/8/p7/PPP5/8 w - - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("b2b3"));
+        let expected_moves = vec!["b6b5"];
+        assert_moves(board.generate_pseudo_moves(), expected_moves);
+    }
+
+    #[test]
+    fn test_make_move_promotion() {
+        let mut board = ChessBoard::from_fen("8/2P5/1p6/8/8/p7/PP6/8 w - - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("c7c8Q"));
+        assert_eq!(
+            board.squares[7][2],
+            Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::Queen
+            })
+        );
     }
 
     #[test]
