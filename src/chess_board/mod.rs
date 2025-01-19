@@ -335,8 +335,6 @@ impl ChessBoard {
                         let rook_col = 7;
                         self.squares[row][5] = self.squares[row][rook_col];
                         self.squares[row][rook_col] = Square::Empty;
-                        self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
-                        self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
                     }
                 } else if mv == Move::new(row, 4, row, 2) {
                     // Queenside castling
@@ -344,9 +342,22 @@ impl ChessBoard {
                         let rook_col = 0;
                         self.squares[row][3] = self.squares[row][rook_col];
                         self.squares[row][rook_col] = Square::Empty;
-                        self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] = false;
-                        self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] = false;
                     }
+                }
+                if mv.from.row == 0 && mv.from.col == 0 {
+                    self.castling_rights[1] = false;
+                } else if mv.from.row == 7 && mv.from.col == 0 {
+                    self.castling_rights[3] = false;
+                } else if mv.from.row == 0 && mv.from.col == 7 {
+                    self.castling_rights[0] = false;
+                } else if mv.from.row == 7 && mv.from.col == 7 {
+                    self.castling_rights[2] = false;
+                } else if mv.from.row == 0 && mv.from.col == 4 {
+                    self.castling_rights[0] = false;
+                    self.castling_rights[1] = false;
+                } else if mv.from.row == 7 && mv.from.col == 4 {
+                    self.castling_rights[2] = false;
+                    self.castling_rights[3] = false;
                 }
 
                 if p.kind == PieceType::Pawn {
@@ -974,6 +985,76 @@ mod tests {
                 kind: PieceType::Rook
             })
         );
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], false);
+        assert_eq!(board.castling_rights[3], false);
+        assert_eq!(board.en_passant, None);
+
+        //white a rook moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("a1b1"));
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], false);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+
+        //black a rook moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("a8b8"));
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], false);
+        assert_eq!(board.en_passant, None);
+
+        //white h rook moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("h1g1"));
+        assert_eq!(board.castling_rights[0], false);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+        board.make_move(Move::from_algebraic("a7a6"));
+        board.make_move(Move::from_algebraic("e1c1"));
+        assert_eq!(
+            board.squares[0][2],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::King
+            })
+        );
+        assert_eq!(
+            board.squares[0][3],
+            Square::Occupied(Piece {
+                color: Color::White,
+                kind: PieceType::Rook
+            })
+        );
+
+        //black h rook moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("h8g8"));
+        assert_eq!(board.castling_rights[0], true);
+        assert_eq!(board.castling_rights[1], true);
+        assert_eq!(board.castling_rights[2], false);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+
+        //white king moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e1d1"));
+        assert_eq!(board.castling_rights[0], false);
+        assert_eq!(board.castling_rights[1], false);
+        assert_eq!(board.castling_rights[2], true);
+        assert_eq!(board.castling_rights[3], true);
+        assert_eq!(board.en_passant, None);
+
+        //black king moved
+        let mut board = ChessBoard::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1").unwrap();
+        board.make_move(Move::from_algebraic("e8d8"));
         assert_eq!(board.castling_rights[0], true);
         assert_eq!(board.castling_rights[1], true);
         assert_eq!(board.castling_rights[2], false);
