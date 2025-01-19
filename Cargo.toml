@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 slint = "1.9.1"
 lazy_static = "1.5.0"
+clap = { version = "4.5.26", features = ["cargo"] }
+tabled = "0.17.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2" }

@@ -2,6 +2,7 @@ use crate::chess_board::Color;
 use crate::chess_board::PieceType;
 use crate::chess_board::Square;
 use crate::chess_board::Square::Occupied;
+use crate::engine_minmax::find_best_move;
 use crate::ChessBoard;
 use crate::ChessField;
 use crate::MainWindow;
@@ -52,11 +53,12 @@ fn square_to_ui_field(square: &Square) -> UiField {
 }
 
 fn create_piece(piece_svg: &str) -> UiField {
-    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join(piece_svg);
+    //use relative path instead absolute path
+    //let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join(piece_svg);
     let path_buf = Path::new(piece_svg);
 
     UiField {
-        image: Image::load_from_path(&path_buf).unwrap(),
+        image: Image::load_from_path(path_buf).unwrap(),
         highlighted_for_move: false,
     }
 }
@@ -154,6 +156,7 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
                                             chess_board_clone.borrow_mut().make_move(mv);
                                             main_window
                                                 .set_chess_fields(map_chessboard_to_ui(&chess_board_clone.borrow()));
+                                            make_engine_move(&main_window, &mut chess_board_clone.borrow_mut());
                                         }
                                     });
                                     return;
@@ -166,6 +169,8 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
 
                             main_window.set_chess_fields(map_chessboard_to_ui(&chess_board.clone()));
                             selected_field = None;
+
+                            make_engine_move(&main_window, &mut chess_board);
                         } else {
                             highlight_move(
                                 &main_window.get_chess_fields(),
@@ -178,5 +183,20 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
                 }
             }
         });
+    }
+}
+
+fn make_engine_move(main_window: &MainWindow, chess_board: &mut ChessBoard) {
+    if let Some((best_move, score, node_count)) = find_best_move(&chess_board.clone(), 3) {
+        chess_board.make_move(best_move);
+        println!(
+            "Best move: {} with score: {} nodes: {}",
+            best_move.as_algebraic(),
+            score,
+            node_count
+        );
+        main_window.set_chess_fields(map_chessboard_to_ui(&chess_board.clone()));
+    } else {
+        println!("No best move found!");
     }
 }
