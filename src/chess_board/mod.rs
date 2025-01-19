@@ -194,7 +194,14 @@ impl ChessBoard {
             let new_col = (col as isize + dx) as usize;
             if let Square::Occupied(opponent_piece) = self.squares[new_row][new_col] {
                 if opponent_piece.color != self.active_color {
-                    Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, new_col, promotion_row, &mut moves);
+                    Self::add_pawn_moves_with_and_without_promotion(
+                        row,
+                        col,
+                        new_row,
+                        new_col,
+                        promotion_row,
+                        &mut moves,
+                    );
                 }
             }
         }
@@ -209,7 +216,14 @@ impl ChessBoard {
         moves
     }
 
-    fn add_pawn_moves_with_and_without_promotion(row: usize, col: usize, new_row: usize, new_col: usize, promotion_row: usize, moves: &mut Vec<Move>) {
+    fn add_pawn_moves_with_and_without_promotion(
+        row: usize,
+        col: usize,
+        new_row: usize,
+        new_col: usize,
+        promotion_row: usize,
+        moves: &mut Vec<Move>,
+    ) {
         if new_row == promotion_row {
             for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
                 moves.push(Move::new(row, col, new_row, new_col).with_promotion(promotion_piece));
@@ -383,12 +397,15 @@ impl ChessBoard {
         };
     }
 
-    fn is_square_attacked(&self, row: usize, col: usize) -> bool {
+    pub fn is_square_attacked(&self, row: usize, col: usize) -> bool {
         let opponent_color = match self.active_color {
             Color::White => Color::Black,
             Color::Black => Color::White,
         };
+        self.is_square_attacked_by_color(row, col, opponent_color)
+    }
 
+    pub fn is_square_attacked_by_color(&self, row: usize, col: usize, opponent_color: Color) -> bool {
         const KNIGHT_MOVES: [(isize, isize); 8] =
             [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)];
 
@@ -438,9 +455,9 @@ impl ChessBoard {
             }
         }
 
-        let pawn_attacks = match self.active_color {
-            Color::White => [(1, -1), (1, 1)],   // Black pawns attack "downward"
-            Color::Black => [(-1, -1), (-1, 1)], // White pawns attack "upward"
+        let pawn_attacks = match opponent_color {
+            Color::Black => [(1, -1), (1, 1)],
+            Color::White => [(-1, -1), (-1, 1)],
         };
 
         if self.check_attack(row, col, opponent_color, &pawn_attacks, PieceType::Pawn) {
@@ -497,6 +514,71 @@ impl ChessBoard {
             }
         }
         moves
+    }
+
+    pub fn find_king_position(&self, color: Color) -> Option<ChessField> {
+        for row in 0..8 {
+            for col in 0..8 {
+                if let Square::Occupied(Piece {
+                    color: piece_color,
+                    kind: PieceType::King,
+                }) = self.squares[row][col]
+                {
+                    if piece_color == color {
+                        return Some(ChessField::new(row, col));
+                    }
+                }
+            }
+        }
+        None // Should never occur in a valid chess position
+    }
+
+    pub fn generate_legal_moves(&self) -> Vec<Move> {
+        let mut legal_moves = Vec::new();
+
+        // Generate all pseudo-legal moves
+        let pseudo_moves = self.generate_pseudo_moves();
+
+        // For each pseudo-legal move, check if it leaves the king in check
+        for mv in pseudo_moves {
+            let mut board_clone = self.clone(); // Clone the board to simulate the move
+            board_clone.make_move(mv); // Make the move on the cloned board
+
+            // Locate the king of the current player
+            let king_position = board_clone.find_king_position(self.active_color);
+
+            // Check if the king is under attack after the move
+            if let Some(king_pos) = king_position {
+                if !board_clone.is_square_attacked_by_color(king_pos.row, king_pos.col, board_clone.active_color) {
+                    legal_moves.push(mv); // Add move to legal moves if not leaving the king in check
+                }
+            }
+        }
+
+        legal_moves
+    }
+
+    pub fn is_stalemate(&self) -> bool {
+        if let Some(king_pos) = self.find_king_position(self.active_color) {
+            if self.is_square_attacked(king_pos.row, king_pos.col) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        self.generate_legal_moves().is_empty()
+    }
+    pub fn is_checkmate(&self) -> bool {
+        // Step 1: Ensure the active player's king is in check
+        if let Some(king_pos) = self.find_king_position(self.active_color) {
+            if !self.is_square_attacked(king_pos.row, king_pos.col) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        self.generate_legal_moves().is_empty()
     }
 }
 
@@ -1060,5 +1142,47 @@ mod tests {
         assert_eq!(board.castling_rights[2], false);
         assert_eq!(board.castling_rights[3], false);
         assert_eq!(board.en_passant, None);
+    }
+
+    #[test]
+    fn test_if_field_is_attacked() {
+        let board = ChessBoard::from_fen("8/2P5/8/8/8/8/3p4/8 w - - 0 1").unwrap();
+        assert_eq!(board.is_square_attacked(0, 2), true);
+        assert_eq!(board.is_square_attacked(0, 3), false);
+        assert_eq!(board.is_square_attacked(0, 4), true);
+
+        //test attack of White Pawn
+        assert_eq!(board.is_square_attacked(7, 1), false);
+        assert_eq!(board.is_square_attacked(7, 2), false);
+        assert_eq!(board.is_square_attacked(7, 3), false);
+        assert_eq!(board.is_square_attacked_by_color(7, 1, Color::White), true);
+        assert_eq!(board.is_square_attacked_by_color(7, 2, Color::White), false);
+        assert_eq!(board.is_square_attacked_by_color(7, 3, Color::White), true);
+    }
+
+    #[test]
+    fn test_pinned_pieace() {
+        let board = ChessBoard::from_fen("1k6/8/8/8/3q4/8/1R6/K7 w - - 0 1").unwrap();
+        assert_moves(board.generate_legal_moves(), vec!["a1a2", "a1b1"])
+    }
+
+    #[test]
+    fn test_checkmate() {
+        let board = ChessBoard::from_fen("1k6/8/8/8/8/8/PPn5/KN6 w - - 0 1").unwrap();
+        assert_eq!(board.is_checkmate(), true);
+
+        //stalemate
+        let board = ChessBoard::from_fen("1k6/8/8/8/8/1r6/7r/K7 w - - 0 1").unwrap();
+        assert_eq!(board.is_checkmate(), false);
+    }
+
+    #[test]
+    fn test_stalemate() {
+        let board = ChessBoard::from_fen("1k6/8/8/8/8/1r6/7r/K7 w - - 0 1").unwrap();
+        assert_eq!(board.is_stalemate(), true);
+
+        //checkmate
+        let board = ChessBoard::from_fen("1k6/8/8/8/8/8/PPn5/KN6 w - - 0 1").unwrap();
+        assert_eq!(board.is_stalemate(), false);
     }
 }
