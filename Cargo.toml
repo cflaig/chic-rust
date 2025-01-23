@@ -10,6 +10,9 @@ slint = "1.9.1"
 lazy_static = "1.5.0"
 clap = { version = "4.5.26", features = ["cargo"] }
 tabled = "0.17.0"
+rand = "0.8"
+rand_pcg = "0.3"
+circular-buffer = "0.1.9"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2" }

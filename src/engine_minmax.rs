@@ -28,6 +28,9 @@ const DRAW: i32 = 0;
 
 fn negamax(board: &ChessBoard, depth: i32, node_count: &mut u64) -> i32 {
     *node_count += 1;
+    if board.is_threefold_repetition() {
+        return 0;
+    }
     if depth == 0 {
         return evaluate_board(board) * if board.active_color == Color::White { 1 } else { -1 };
     }

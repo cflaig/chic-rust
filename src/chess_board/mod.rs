@@ -1,6 +1,9 @@
+use crate::chess_board::zobrist_hash::ZOBRIST;
+use circular_buffer::CircularBuffer;
 use std::fmt;
 
 pub mod fen;
+pub mod zobrist_hash;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -104,6 +107,7 @@ pub struct ChessBoard {
     pub en_passant: Option<ChessField>,
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
+    pub repetition_map: CircularBuffer<32, u64>,
 }
 
 impl ChessBoard {
@@ -116,12 +120,17 @@ impl ChessBoard {
             en_passant: None,            // No en passant square by default
             halfmove_clock: 0,           // Halfmove clock starts at 0
             fullmove_number: 1,
+            repetition_map: CircularBuffer::new(),
         }
     }
 
     /// Delegates FEN parsing to the `fen` module.
     pub fn from_fen(fen: &str) -> Result<Self, String> {
-        fen::from_fen(fen)
+        fen::from_fen(fen).map(|mut board| {
+            let zobrist = &*ZOBRIST;
+            board.repetition_map.push_back(zobrist.calculate_hash(&board));
+            board
+        })
     }
 
     pub fn generate_pseudo_moves(&self) -> Vec<Move> {
@@ -374,6 +383,12 @@ impl ChessBoard {
                     self.castling_rights[3] = false;
                 }
 
+                if p.kind == PieceType::Pawn || matches!(self.squares[mv.to.row][mv.to.col], Square::Occupied(_)) {
+                    self.halfmove_clock = 0;
+                } else {
+                    self.halfmove_clock += 1;
+                }
+
                 if p.kind == PieceType::Pawn {
                     if p.color == Color::White && mv.from.row == 1 && mv.to.row == 3 {
                         self.en_passant = Some(ChessField::new(2, mv.from.col));
@@ -395,6 +410,13 @@ impl ChessBoard {
             Color::White => Color::Black,
             Color::Black => Color::White,
         };
+
+        if self.active_color == Color::White {
+            self.fullmove_number += 1;
+        }
+
+        let zobrist = &*ZOBRIST;
+        self.repetition_map.push_back(zobrist.calculate_hash(self));
     }
 
     pub fn is_square_attacked(&self, row: usize, col: usize) -> bool {
@@ -580,12 +602,34 @@ impl ChessBoard {
 
         self.generate_legal_moves().is_empty()
     }
+
+    pub fn is_draw_by_fifty_move_rule(&self) -> bool {
+        self.halfmove_clock >= 100
+    }
+
+    pub fn is_threefold_repetition(&self) -> bool {
+        let mut repetition_count = 0;
+
+        if let Some(&current_hash) = self.repetition_map.back() {
+            for &stored_hash in self.repetition_map.iter() {
+                if stored_hash == current_hash {
+                    repetition_count += 1;
+                }
+                if repetition_count >= 3 {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chess_board::Square::Occupied;
+
     impl ChessBoard {
         /// Creates an empty chess board
         pub fn generate_pseudo_moves_from_chess_field(&self, pos: ChessField) -> Vec<Move> {
@@ -1184,5 +1228,22 @@ mod tests {
         //checkmate
         let board = ChessBoard::from_fen("1k6/8/8/8/8/8/PPn5/KN6 w - - 0 1").unwrap();
         assert_eq!(board.is_stalemate(), false);
+    }
+
+    #[test]
+    fn test_three_fold_repetition() {
+        let mut board =
+            ChessBoard::from_fen("1rb2rk1/p4ppp/1p1qp1n1/3n2N1/2pP4/2P3P1/PPQ2PBP/R1B1R1K1 w - - 4 17").unwrap();
+
+        board.make_move(Move::from_algebraic("e1e2"));
+        board.make_move(Move::from_algebraic("g8h8"));
+        board.make_move(Move::from_algebraic("e2e1"));
+        board.make_move(Move::from_algebraic("h8g8"));
+        assert_eq!(board.is_threefold_repetition(), false);
+        board.make_move(Move::from_algebraic("e1e2"));
+        board.make_move(Move::from_algebraic("g8h8"));
+        board.make_move(Move::from_algebraic("e2e1"));
+        board.make_move(Move::from_algebraic("h8g8"));
+        assert_eq!(board.is_threefold_repetition(), true);
     }
 }
