@@ -17,6 +17,7 @@ circular-buffer = "0.1.9"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2" }
 getrandom = { version = "0.2.2", features = ["js"] }
+web-time = "1.1.0"
 
 [lib]
 path = "src/main.rs"

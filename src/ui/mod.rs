@@ -2,7 +2,7 @@ use crate::chess_board::Color;
 use crate::chess_board::PieceType;
 use crate::chess_board::Square;
 use crate::chess_board::Square::Occupied;
-use crate::engine_minmax::find_best_move;
+use crate::engine_alpha_beta::{find_best_move, find_best_move_iterative, find_best_move_random};
 use crate::ChessBoard;
 use crate::ChessField;
 use crate::MainWindow;
@@ -18,6 +18,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
+use std::time::Duration;
 
 // Use a single map for image paths instead of multiple constants
 lazy_static! {
@@ -186,15 +187,28 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
     }
 }
 
+
+// #[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+// extern "C" {
+//     // Use `js_namespace` here to bind `console.log(..)` instead of just
+//     // `log(..)`
+//     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console)]
+//     fn log(s: &str);
+// }
 fn make_engine_move(main_window: &MainWindow, chess_board: &mut ChessBoard) {
-    if let Some((best_move, score, node_count)) = find_best_move(&chess_board.clone(), 3) {
+    if let Some((best_move, score, node_count, depth)) = find_best_move_iterative(&chess_board.clone(),Duration::from_secs_f32(2.5)) {
         chess_board.make_move(best_move);
         println!(
-            "Best move: {} with score: {} nodes: {}",
+            "Best move: {} with score: {} nodes: {} depth: {}",
             best_move.as_algebraic(),
             score,
-            node_count
+            node_count,
+            depth
         );
+        #[cfg(target_arch = "wasm32")]
+        {
+            log(&format!("Best move: {} with score: {} evaluated nodes: {} depth: {}", best_move.as_algebraic(), score, node_count, depth));
+        }
         main_window.set_chess_fields(map_chessboard_to_ui(&chess_board.clone()));
     } else {
         println!("No best move found!");

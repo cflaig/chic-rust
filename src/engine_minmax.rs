@@ -1,3 +1,4 @@
+use rand::prelude::SliceRandom;
 use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
 
 pub fn find_best_move(board: &ChessBoard, depth: i32) -> Option<(Move, i32, u64)> {
@@ -19,6 +20,36 @@ pub fn find_best_move(board: &ChessBoard, depth: i32) -> Option<(Move, i32, u64)
     }
 
     best_move.map(|mv| (mv, best_score, node_count))
+}
+
+pub fn find_best_move_random(board: &ChessBoard, depth: i32) -> Option<(Move, i32, u64)> {
+    let mut best_moves = Vec::new();
+    let mut best_score = i32::MIN;
+    let mut node_count = 0;
+
+    for mv in board.generate_legal_moves() {
+        let mut new_board = board.clone();
+        new_board.make_move(mv);
+
+        // Negamax for the opponent's position (invert the returned evaluation)
+        let score = -negamax(&new_board, depth, &mut node_count);
+
+        if score > best_score {
+            best_score = score;
+            best_moves.clear();
+            best_moves.push(mv);
+        } else if score == best_score {
+            best_moves.push(mv);
+        }
+    }
+    if !best_moves.is_empty() {
+        // Randomly pick one of the best moves if there's a tie
+        let mut rng = rand::thread_rng();
+        let selected_move = best_moves.choose(&mut rng)?.clone();
+        return Some((selected_move, best_score, node_count));
+    }
+
+    None
 }
 
 const MIN_EVALUATION: i32 = i32::MIN + 1; // +1 is important because -MIN is not a i32 number
@@ -143,6 +174,21 @@ mod tests {
     #[test]
     fn test_from_a_played_position() {
         let mut board = ChessBoard::from_fen("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26").unwrap();
+        if let Some((best_move, score, nodes)) = find_best_move(&board, 5) {
+            println!(
+                "Best move: {} with score: {} evaluated nodes: {}",
+                best_move.as_algebraic(),
+                score,
+                nodes
+            );
+        } else {
+            println!("No best move found!");
+        }
+    }
+
+    #[test]
+    fn test_perpetual_check() {
+        let mut board = ChessBoard::from_fen("1k1r2rq/6pp/Q7/8/8/8/6PP/7K w - - 0 1").unwrap();
         if let Some((best_move, score, nodes)) = find_best_move(&board, 5) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",

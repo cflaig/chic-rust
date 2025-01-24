@@ -3,20 +3,22 @@ use std::time::Instant;
 mod chess_board;
 mod engine_minmax;
 mod ui;
+mod engine_alpha_beta;
 
 use chess_board::ChessBoard;
 use chess_board::ChessField;
 
-use crate::engine_minmax::find_best_move;
+use crate::engine_alpha_beta::find_best_move;
 use ui::setup_ui;
 
 use clap::arg;
 use clap::command;
 use clap::Command;
-
+use slint::SelectBundledTranslationError;
 use tabled::settings::Style;
 use tabled::Table;
 use tabled::Tabled;
+use crate::engine_alpha_beta::find_best_move_random;
 
 slint::include_modules!();
 
@@ -55,7 +57,7 @@ fn main() {
 fn play_with_ui() {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";
-    let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
+    let mut chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
     let generated_converted: Vec<_> = chess_board
         .generate_pseudo_moves()
         .iter()
@@ -75,14 +77,16 @@ struct BenchmarkRow {
     node_count: u64,
     elapsed_time: f32,
     move_per_sec: f32,
+    best_move: String,
 }
 fn benchmark() {
     let fen = "1rb2rk1/p4ppp/1p1qp1n1/3n2N1/2pP4/2P3P1/PPQ2PBP/R1B1R1K1 w - - 4 17";
+    //let fen = "1k1r2rq/6pp/Q7/8/8/8/6PP/7K w - - 0 1";
     let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
     let mut table_rows = Vec::new();
-    for d in 0..5 {
+    for d in 0..6 {
         let start_time = Instant::now();
-        if let Some((_, score, node_count)) = find_best_move(&chess_board.clone(), d) {
+        if let Some((mv, score, node_count)) = find_best_move(&chess_board.clone(), d) {
             let elapsed = start_time.elapsed();
             table_rows.push(BenchmarkRow {
                 ply: d,
@@ -90,6 +94,7 @@ fn benchmark() {
                 node_count,
                 elapsed_time: elapsed.as_secs_f32(),
                 move_per_sec: node_count as f32 / elapsed.as_secs_f32() / 1000f32,
+                best_move: mv.as_algebraic(),
             });
         } else {
             println!("No best move found!");
