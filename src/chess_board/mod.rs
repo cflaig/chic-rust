@@ -44,6 +44,7 @@ pub struct Move {
     pub from: ChessField,
     pub to: ChessField,
     pub promotion: Option<PieceType>,
+    pub score: i32,
 }
 
 impl fmt::Display for PieceType {
@@ -66,11 +67,12 @@ impl ChessField {
 }
 impl Move {
     // Create a new Move
-    pub fn new(from_row: usize, from_col: usize, to_row: usize, to_col: usize) -> Self {
+    pub fn new(from_row: usize, from_col: usize, to_row: usize, to_col: usize, score: i32) -> Self {
         Self {
             from: ChessField::new(from_row, from_col),
             to: ChessField::new(to_row, to_col),
             promotion: None,
+            score,
         }
     }
 
@@ -108,6 +110,23 @@ pub struct ChessBoard {
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
     pub repetition_map: CircularBuffer<32, u64>,
+}
+
+const NO_CAPTURE: i32 = 0;
+const CAPTURE: i32 = 10000;
+const CAPTURE_BASE: i32 = CAPTURE + 10;
+const CASTLING_SCORE: i32 = 50;
+
+
+fn get_piece_value(piece: &PieceType) -> i32 {
+     match piece {
+        PieceType::Pawn => 1,
+        PieceType::Knight => 3,
+        PieceType::Bishop => 3,
+        PieceType::Rook => 5,
+        PieceType::Queen => 9,
+        PieceType::King => 15,
+    }
 }
 
 impl ChessBoard {
@@ -183,13 +202,13 @@ impl ChessBoard {
 
         // Regular forward move
         if self.squares[new_row][col] == Square::Empty {
-            Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, col, promotion_row, &mut moves);
+            Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, col, promotion_row, NO_CAPTURE, &mut moves);
 
             // Double move from start position
             if row == start_row {
                 let two_forward = (row as isize + 2 * forward) as usize;
                 if self.squares[two_forward][col] == Square::Empty {
-                    moves.push(Move::new(row, col, two_forward, col));
+                    moves.push(Move::new(row, col, two_forward, col, NO_CAPTURE));
                 }
             }
         }
@@ -209,6 +228,7 @@ impl ChessBoard {
                         new_row,
                         new_col,
                         promotion_row,
+                        CAPTURE_BASE + get_piece_value(&opponent_piece.kind) - 1,
                         &mut moves,
                     );
                 }
@@ -218,7 +238,7 @@ impl ChessBoard {
         // En passant
         if let Some(en_passant) = self.en_passant {
             if new_row == en_passant.row && (col as isize - en_passant.col as isize).abs() == 1 {
-                moves.push(Move::new(row, col, en_passant.row, en_passant.col));
+                moves.push(Move::new(row, col, en_passant.row, en_passant.col, CAPTURE_BASE));
             }
         }
 
@@ -231,14 +251,15 @@ impl ChessBoard {
         new_row: usize,
         new_col: usize,
         promotion_row: usize,
+        score: i32,
         moves: &mut Vec<Move>,
     ) {
         if new_row == promotion_row {
             for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-                moves.push(Move::new(row, col, new_row, new_col).with_promotion(promotion_piece));
+                moves.push(Move::new(row, col, new_row, new_col, score + 1).with_promotion(promotion_piece));
             }
         } else {
-            moves.push(Move::new(row, col, new_row, new_col));
+            moves.push(Move::new(row, col, new_row, new_col, score));
         }
     }
 
@@ -254,6 +275,11 @@ impl ChessBoard {
     fn generate_sliding_moves(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<Move> {
         let mut moves: Vec<Move> = Vec::new();
 
+        let moving_piece = match self.squares[row][col] {
+            Square::Occupied(p) => p,
+                _ => return moves
+            };
+
         for &(dx, dy) in directions {
             let mut new_row = row as isize;
             let mut new_col = col as isize;
@@ -267,10 +293,10 @@ impl ChessBoard {
                 }
 
                 match self.squares[new_row as usize][new_col as usize] {
-                    Square::Empty => moves.push(Move::new(row, col, new_row as usize, new_col as usize)),
+                    Square::Empty => moves.push(Move::new(row, col, new_row as usize, new_col as usize, NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
-                            moves.push(Move::new(row, col, new_row as usize, new_col as usize));
+                            moves.push(Move::new(row, col, new_row as usize, new_col as usize, CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
                         }
                         break; // Block sliding
                     }
@@ -322,7 +348,7 @@ impl ChessBoard {
                 && !self.is_square_attacked(row, 5)
                 && !self.is_square_attacked(row, 6)
             {
-                moves.push(Move::new(row, 4, row, 6)); // Move King: e1->g1 or e8->g8
+                moves.push(Move::new(row, 4, row, 6, CASTLING_SCORE)); // Move King: e1->g1 or e8->g8
             }
 
             // Queenside castling
@@ -334,7 +360,7 @@ impl ChessBoard {
                 && !self.is_square_attacked(row, 3)
                 && !self.is_square_attacked(row, 2)
             {
-                moves.push(Move::new(row, 4, row, 2)); // Move King: e1->c1 or e8->c8
+                moves.push(Move::new(row, 4, row, 2, CASTLING_SCORE)); // Move King: e1->c1 or e8->c8
             }
         }
         moves
@@ -351,20 +377,20 @@ impl ChessBoard {
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
                 self.squares[mv.to.row][mv.to.col] = piece;
                 // Check if the move is a castling move and if castling is allowed
-                let row = mv.to.row;
-                if mv == Move::new(row, 4, row, 6) {
-                    // Kingside castling
-                    if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
-                        let rook_col = 7;
-                        self.squares[row][5] = self.squares[row][rook_col];
-                        self.squares[row][rook_col] = Square::Empty;
-                    }
-                } else if mv == Move::new(row, 4, row, 2) {
-                    // Queenside castling
-                    if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
-                        let rook_col = 0;
-                        self.squares[row][3] = self.squares[row][rook_col];
-                        self.squares[row][rook_col] = Square::Empty;
+                if p.kind == PieceType::King {
+                    if mv.from.col == 4 && mv.to.col == 6 && mv.from.row == mv.to.row {
+                        if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
+                            let rook_col = 7;
+                            self.squares[mv.from.row][5] = self.squares[mv.from.row][rook_col];
+                            self.squares[mv.from.row][rook_col] = Square::Empty;
+                        }
+                    } else if mv.from.col == 4 && mv.to.col == 2 && mv.from.row == mv.to.row {
+                        // Queenside castling
+                        if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
+                            let rook_col = 0;
+                            self.squares[mv.from.row][3] = self.squares[mv.from.row][rook_col];
+                            self.squares[mv.from.row][rook_col] = Square::Empty;
+                        }
                     }
                 }
                 if mv.from.row == 0 && mv.from.col == 0 {
@@ -523,16 +549,26 @@ impl ChessBoard {
     fn generate_moves_from_directions(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<Move> {
         let mut moves = Vec::new();
 
+
+        let moving_piece = match self.squares[row][col] {
+            Square::Occupied(p) => p,
+            _ => return moves
+        };
+
         for &(dx, dy) in directions {
             let new_row = (row as isize + dx) as usize;
             let new_col = (col as isize + dy) as usize;
 
             if new_row < 8
-                && new_col < 8
-                && (self.squares[new_row][new_col] == Square::Empty
-                    || matches!(self.squares[new_row][new_col], Square::Occupied(p) if p.color != self.active_color))
-            {
-                moves.push(Move::new(row, col, new_row, new_col));
+                && new_col < 8 {
+                match self.squares[new_row as usize][new_col as usize] {
+                    Square::Empty => moves.push(Move::new(row, col, new_row as usize, new_col as usize, NO_CAPTURE)),
+                    Square::Occupied(p) => {
+                        if p.color != self.active_color {
+                            moves.push(Move::new(row, col, new_row as usize, new_col as usize, CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
+                        }
+                    }
+                }
             }
         }
         moves
@@ -576,7 +612,7 @@ impl ChessBoard {
                 }
             }
         }
-
+        legal_moves.sort_by(|a, b| b.score.cmp(&a.score));
         legal_moves
     }
 
@@ -603,6 +639,7 @@ impl ChessBoard {
             }
         }
 
+        capture_moves.sort_by(|a, b| b.score.cmp(&a.score));
         capture_moves
     }
 
@@ -655,6 +692,9 @@ impl ChessBoard {
         self.generate_legal_moves().is_empty()
     }
 
+    pub fn is_draw(&self) -> bool {
+        self.is_draw_by_fifty_move_rule() || self.is_threefold_repetition()
+    }
     #[allow(dead_code)]
     pub fn is_draw_by_fifty_move_rule(&self) -> bool {
         self.halfmove_clock >= 100
@@ -723,6 +763,7 @@ mod tests {
                 from: ChessField::new(from.0, from.1),
                 to: ChessField::new(to.0, to.1),
                 promotion,
+                score: 0,
             }
         }
     }

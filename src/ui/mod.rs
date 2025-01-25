@@ -123,7 +123,7 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
                             .borrow()
                             .generate_pseudo_moves_from_position(source.row, source.col);
                         if moves.iter().any(|m| m.to == clicked_field) {
-                            let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col);
+                            let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col, 0);
 
                             if let Occupied(piece) = chess_board.borrow().squares[source.row][source.col] {
                                 if piece.kind == PieceType::Pawn && (clicked_field.row == 0 || clicked_field.row == 7) {
