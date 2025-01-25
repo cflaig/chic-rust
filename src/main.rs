@@ -20,11 +20,6 @@ use tabled::Tabled;
 
 slint::include_modules!();
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen(start))]
-fn java_script_ui() {
-    play_with_ui();
-}
-
 fn main() {
     let matches = command!()
         .version("v0.0.1")
