@@ -2,7 +2,7 @@ use crate::chess_board::Color;
 use crate::chess_board::PieceType;
 use crate::chess_board::Square;
 use crate::chess_board::Square::Occupied;
-use crate::engine_minmax::find_best_move_iterative;
+use crate::engine_alpha_beta::find_best_move_iterative;
 use crate::ChessBoard;
 use crate::ChessField;
 use crate::MainWindow;
@@ -188,7 +188,7 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
 
 fn make_engine_move(main_window: &MainWindow, chess_board: &mut ChessBoard) {
     if let Some((best_move, score, node_count, depth)) =
-        find_best_move_iterative(&chess_board.clone(), std::time::Duration::from_secs(3))
+        find_best_move_iterative(&chess_board.clone(), std::time::Duration::from_secs(12))
     {
         chess_board.make_move(best_move);
         println!(
