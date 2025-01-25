@@ -2,6 +2,7 @@ use crate::chess_board::Move;
 use std::time::Instant;
 mod chess_board;
 mod engine_minmax;
+mod engine_alpha_beta;
 mod ui;
 
 use chess_board::ChessBoard;
