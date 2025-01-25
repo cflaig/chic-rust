@@ -580,6 +580,56 @@ impl ChessBoard {
         legal_moves
     }
 
+    pub fn generate_capture_moves(&self) -> Vec<Move> {
+        let mut capture_moves = Vec::new();
+
+        for row in 0..8 {
+            for col in 0..8 {
+                // Only process pieces of the active color
+                if let Square::Occupied(piece) = self.squares[row][col] {
+                    if piece.color == self.active_color {
+                        let piece_moves = self.generate_pseudo_moves_from_position(row, col);
+
+                        // Filter for capture moves
+                        for mv in piece_moves {
+                            if let Square::Occupied(target_piece) = self.squares[mv.to.row][mv.to.col] {
+                                if target_piece.color != self.active_color {
+                                    capture_moves.push(mv);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        capture_moves
+    }
+
+    pub fn generate_legal_capture_moves(&self) -> Vec<Move> {
+        let mut legal_moves = Vec::new();
+
+        let pseudo_moves = self.generate_capture_moves();
+
+        for mv in pseudo_moves {
+            let mut board_clone = self.clone(); // Clone the board to simulate the move
+            board_clone.make_move(mv); // Make the move on the cloned board
+
+            // Locate the king of the current player
+            let king_position = board_clone.find_king_position(self.active_color);
+
+            // Check if the king is under attack after the move
+            if let Some(king_pos) = king_position {
+                if !board_clone.is_square_attacked_by_color(king_pos.row, king_pos.col, board_clone.active_color) {
+                    legal_moves.push(mv); // Add move to legal moves if not leaving the king in check
+                }
+            }
+        }
+
+        legal_moves
+    }
+
+    #[allow(dead_code)]
     pub fn is_stalemate(&self) -> bool {
         if let Some(king_pos) = self.find_king_position(self.active_color) {
             if self.is_square_attacked(king_pos.row, king_pos.col) {
@@ -590,6 +640,8 @@ impl ChessBoard {
         }
         self.generate_legal_moves().is_empty()
     }
+
+    #[allow(dead_code)]
     pub fn is_checkmate(&self) -> bool {
         // Step 1: Ensure the active player's king is in check
         if let Some(king_pos) = self.find_king_position(self.active_color) {
@@ -603,6 +655,7 @@ impl ChessBoard {
         self.generate_legal_moves().is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn is_draw_by_fifty_move_rule(&self) -> bool {
         self.halfmove_clock >= 100
     }
