@@ -721,7 +721,7 @@ impl ChessBoard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::Square::Occupied;
+    use crate::chess_board::Square::{Empty, Occupied};
 
     impl ChessBoard {
         /// Creates an empty chess board
@@ -1339,5 +1339,54 @@ mod tests {
         board.make_move(Move::from_algebraic("e2e1"));
         board.make_move(Move::from_algebraic("h8g8"));
         assert_eq!(board.is_threefold_repetition(), true);
+    }
+
+    fn test_perft() {
+        let depth = 1;
+        let board = ChessBoard::from_fen("v").unwrap();
+        assert_eq!(perft(&board, 3), 8902u64);
+        assert_eq!(perft(&board, 4), 197281u64);
+        //assert_eq!(perft(&board, 5), 4865609u64);
+        assert_eq!(perft(&board, 6), 119060324u64);
+    }
+
+    #[test]
+    fn test_perft_pos5() {
+        let depth = 1;
+        let board = ChessBoard::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
+        assert_eq!(perft(&board, 1), 44u64);
+        assert_eq!(perft(&board, 2), 1486u64 );
+        assert_eq!(perft(&board, 3), 62379u64);
+        assert_eq!(perft(&board, 4), 2103487u64);
+        //assert_eq!(perft(&board, 5), 89941194u64);
+    }
+
+    fn test_perft_pos6() {
+        let depth = 1;
+        let board = ChessBoard::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
+        assert_eq!(perft(&board, 1), 46u64);
+        assert_eq!(perft(&board, 2), 2079u64 );
+        assert_eq!(perft(&board, 3), 89890u64);
+        assert_eq!(perft(&board, 4), 3894594u64);
+        //assert_eq!(perft(&board, 5), 164075551u64);
+    }
+
+    fn perft(board: &ChessBoard, depth: u8) -> u64 {
+        let mut node_count = 0u64;
+
+        if depth <= 0 {
+            return 1u64;
+        }
+
+        let moves = board.generate_legal_moves();
+        if moves.len() == 0 {
+            return 1u64;
+        }
+        for mv in moves {
+            let mut new_board = board.clone();
+            new_board.make_move(mv);
+            node_count += perft(&new_board, depth - 1);
+        }
+        node_count
     }
 }
