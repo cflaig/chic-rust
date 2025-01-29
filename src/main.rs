@@ -21,6 +21,8 @@ use tabled::Tabled;
 
 slint::include_modules!();
 
+const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 fn main() {
     let matches = command!()
         .version("v0.0.1")
@@ -30,6 +32,17 @@ fn main() {
         ))
         .subcommand(Command::new("benchmark").about("Runs a benchmark"))
         .subcommand(Command::new("play").about("Play a game"))
+        .subcommand(
+            Command::new("perft").about("Run Perft test")
+                .arg(arg!(
+            -f --fen <FEN> "Board position"
+                    ).default_value(INITIAL_POSITION))
+                    .arg(arg!(
+            -x --depth <d> "depth"
+                    ).default_value("3")
+                        .value_parser(clap::value_parser!(usize))
+                    )
+                )
         .get_matches();
 
     let _debug = matches.get_flag("debug");
@@ -41,6 +54,11 @@ fn main() {
         Some(("play", _)) => {
             play_with_ui();
         }
+        Some(("perft", arg_matches)) => {
+            let fen = arg_matches.get_one::<String>("fen").unwrap();
+            let depth = arg_matches.get_one::<usize>("depth").unwrap();
+            perft(fen.clone(), *depth);
+        }
         None => {
             play_with_ui();
         }
@@ -49,7 +67,7 @@ fn main() {
 }
 
 fn play_with_ui() {
-    let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let fen = INITIAL_POSITION;
     //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";
     let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
     let generated_converted: Vec<_> = chess_board
@@ -98,4 +116,10 @@ fn benchmark() {
         }
     }
     println!("{}", Table::new(table_rows).with(Style::modern()));
+}
+
+fn perft(fen: String, depth: usize) {
+    let chess_board = ChessBoard::from_fen(&fen).unwrap();
+    let num_nodes = chess_board::perft(&chess_board, depth as u8, true);
+    println!("\nNodes searched: {}", num_nodes);
 }
