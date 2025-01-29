@@ -1395,6 +1395,47 @@ mod tests {
     }
 
     #[test]
+    fn test_perft2() {
+        let board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
+        assert_eq!(perft(&board, 1, false), 48);
+        assert_eq!(perft(&board, 2, false), 2039);
+        assert_eq!(perft(&board, 3, false), 97862);
+        assert_eq!(perft(&board, 4, false), 4085603);
+        //assert_eq!(perft(&board, 5, false), 193690690);
+    }
+
+    #[test]
+    fn test_perft3() {
+        let board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
+        assert_eq!(perft(&board, 1, false), 14);
+        assert_eq!(perft(&board, 2, false), 191);
+        assert_eq!(perft(&board, 3, false), 2812);
+        assert_eq!(perft(&board, 4, false), 43238);
+        assert_eq!(perft(&board, 5, false), 674624);
+        assert_eq!(perft(&board, 6, false), 11030083);
+    }
+
+    #[test]
+    fn test_perft4w() {
+        let board = ChessBoard::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1").unwrap();
+        assert_eq!(perft(&board, 1, false), 6);
+        assert_eq!(perft(&board, 2, false), 264);
+        assert_eq!(perft(&board, 3, false), 9467);
+        assert_eq!(perft(&board, 4, false), 422333);
+        assert_eq!(perft(&board, 5, false), 15833292);
+    }
+
+    #[test]
+    fn test_perft4b() {
+        let board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1").unwrap();
+        assert_eq!(perft(&board, 1, false), 6);
+        assert_eq!(perft(&board, 2, false), 264);
+        assert_eq!(perft(&board, 3, false), 9467);
+        assert_eq!(perft(&board, 4, false), 422333);
+        assert_eq!(perft(&board, 5, false), 15833292);
+    }
+
+    #[test]
     fn test_perft_pos5() {
         let board = ChessBoard::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
         assert_eq!(perft(&board, 1, false), 44u64);
