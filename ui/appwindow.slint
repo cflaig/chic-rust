@@ -1,6 +1,11 @@
+import { ListView, Button, StandardButton } from "std-widgets.slint";
 struct UiField {
     image: image,
     highlighted_for_move: bool,
+}
+struct UiMove {
+    white: string,
+    black: string,
 }
 
 component ChessField inherits Rectangle {
@@ -29,6 +34,26 @@ component ChessField inherits Rectangle {
             root.clicked(index);
         }
     }
+}
+
+component ChessMove inherits HorizontalLayout {
+in property <string> white;
+in property <string> black;
+in property <color> bg;
+
+Rectangle {
+    background: bg;
+    Text {
+        text: white;
+    }
+}
+
+Rectangle {
+    background: bg;
+    Text {
+        text: black;
+    }
+}
 }
 
 component PromotionDialog inherits Rectangle {
@@ -60,36 +85,75 @@ component PromotionDialog inherits Rectangle {
 }
 
 export component MainWindow inherits Window {
-    min-width: 512px;
-    min-height: 512px;
-
     callback clicked(int);
     in property <[UiField]> chess_fields: [];
 
-        in property <[UiField]> promotion_choices: [];
-        in property <bool> promotion_dialog_visible: false;
-        callback promotion_selected(int);
+    in property <[UiField]> promotion_choices: [];
+    in property <bool> promotion_dialog_visible: false;
+    in-out property <int> current_move_index: 0;
+    in property <[UiMove]> chess_moves: [];
 
+    callback promotion_selected(int);
 
+    HorizontalLayout {
+        Rectangle {
+            min-width: 512px;
+            min-height: 512px;
 
-    for chess_field[i] in chess_fields: ChessField {
-        x: mod(i, 8) * min(parent.width, parent.height) / 8;
-        y: (7 - floor(i/8)) * min(parent.width, parent.height) / 8;
-        width: min(parent.width, parent.height) / 8;
-        height: min(parent.width, parent.height) / 8;
-        background: mod(i + floor(i/8), 2) == 0 ? #AE8A68: #ECDAB9;
-        icon: chess_field.image;
-        highlighted_for_move: chess_field.highlighted_for_move;
-        index: i;
-        clicked => {
-            root.clicked(i);
-        }
-    }
-    PromotionDialog {
-        promotion_choices: root.promotion_choices;
-        visible: root.promotion_dialog_visible;
-        piece_selected(index) => {
-            root.promotion_selected(index);
+            for chess_field[i] in chess_fields: ChessField {
+                x: mod(i, 8) * min(parent.width, parent.height) / 8;
+                y: (7 - floor(i/8)) * min(parent.width, parent.height) / 8;
+                width: min(parent.width, parent.height) / 8;
+                height: min(parent.width, parent.height) / 8;
+                background: mod(i + floor(i/8), 2) == 0 ? #AE8A68: #ECDAB9;
+                icon: chess_field.image;
+                highlighted_for_move: chess_field.highlighted_for_move;
+                index: i;
+                clicked => {
+                    root.clicked(i);
+                }
+            }
+            PromotionDialog {
+                promotion_choices: root.promotion_choices;
+                visible: root.promotion_dialog_visible;
+                piece_selected(index) => {
+                    root.promotion_selected(index);
+                }
+            }
+            }
+        Rectangle {
+            padding: 10px;
+            VerticalLayout {
+                ListView {
+                    height: parent.height * 0.8; // Occupy 80% of the available space
+                    for data[i] in chess_moves: ChessMove {
+                        white: data.white;
+                        black: data.black;
+                        bg: mod(i, 2) == 0 ? #00000000: #00000099;
+                    }
+                }
+                HorizontalLayout {
+                        Button {
+                            height: self.width * 0.8;
+                            text: "⬆"; // Up arrow
+                            clicked => {
+                                if (current_move_index > 0) {
+                                    current_move_index -= 1;
+                                }
+                            }
+                        }
+                        Button {
+                            height: self.width * 0.8;
+                            text: "⬇"; // Up arrow
+                            clicked => {
+                                if (current_move_index > 0) {
+                                    current_move_index -= 1;
+                                }
+                            }
+                        }
+
+                }
+            }
         }
     }
 }
