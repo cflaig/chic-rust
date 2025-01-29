@@ -88,7 +88,7 @@ impl Move {
             to_algebraic_square(self.to.row, self.to.col)
         );
         if let Some(promo) = self.promotion {
-            base_move + &promo.to_string()
+            base_move + &promo.to_string().to_lowercase()
         } else {
             base_move
         }
@@ -407,6 +407,16 @@ impl ChessBoard {
                 } else if mv.from.row == 7 && mv.from.col == 4 {
                     self.castling_rights[2] = false;
                     self.castling_rights[3] = false;
+                }
+                //capture of the rooks
+                if mv.to.row == 0 && mv.to.col == 0 {
+                    self.castling_rights[1] = false;
+                } else if mv.to.row == 7 && mv.to.col == 0 {
+                    self.castling_rights[3] = false;
+                } else if mv.to.row == 0 && mv.to.col == 7 {
+                    self.castling_rights[0] = false;
+                } else if mv.to.row == 7 && mv.to.col == 7 {
+                    self.castling_rights[2] = false;
                 }
 
                 if p.kind == PieceType::Pawn || matches!(self.squares[mv.to.row][mv.to.col], Square::Occupied(_)) {
@@ -777,6 +787,10 @@ mod tests {
                     Some('R') => Some(PieceType::Rook),
                     Some('B') => Some(PieceType::Bishop),
                     Some('N') => Some(PieceType::Knight),
+                    Some('q') => Some(PieceType::Queen),
+                    Some('r') => Some(PieceType::Rook),
+                    Some('b') => Some(PieceType::Bishop),
+                    Some('n') => Some(PieceType::Knight),
                     _ => None,
                 }
             } else {
@@ -874,21 +888,21 @@ mod tests {
         let board = ChessBoard::from_fen("8/6P1/8/8/8/8/8/8 w - - 0 1").unwrap();
         assert_moves(
             board.generate_pseudo_moves_from_algebraic("g7"),
-            vec!["g7g8Q", "g7g8R", "g7g8B", "g7g8N"],
+            vec!["g7g8q", "g7g8r", "g7g8b", "g7g8n"],
         );
 
         // Test black promotion
         let board = ChessBoard::from_fen("3r4/2P5/8/8/8/8/8/8 w - - 0 1").unwrap();
         assert_moves(
             board.generate_pseudo_moves_from_algebraic("c7"),
-            vec!["c7c8B", "c7c8N", "c7c8R", "c7c8Q", "c7d8B", "c7d8N", "c7d8R", "c7d8Q"],
+            vec!["c7c8b", "c7c8n", "c7c8r", "c7c8q", "c7d8b", "c7d8n", "c7d8r", "c7d8q"],
         );
 
         // Test black promotion
         let board = ChessBoard::from_fen("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/5N2/Pp3P2/2R2K2 b k - 1 27").unwrap();
         assert_moves(
             board.generate_pseudo_moves_from_algebraic("b2"),
-            vec!["b2b1B", "b2b1N", "b2b1Q", "b2b1R", "b2c1B", "b2c1N", "b2c1R", "b2c1Q"],
+            vec!["b2b1b", "b2b1n", "b2b1q", "b2b1r", "b2c1b", "b2c1n", "b2c1r", "b2c1q"],
         );
     }
 
@@ -1142,6 +1156,13 @@ mod tests {
                 kind: PieceType::Queen
             })
         );
+    }
+
+    #[test]
+    fn test_make_move_capture_rook_invalidates_castling() {
+        let mut board = ChessBoard::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/P7/1PP1NnPP/RNBQK2R b KQ - 0 8").unwrap();
+        board.make_move(Move::from_algebraic("f2h1"));
+        assert_eq!(board.castling_rights[0], false);
     }
 
     #[test]
