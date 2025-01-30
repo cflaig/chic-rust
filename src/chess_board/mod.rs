@@ -21,13 +21,13 @@ pub enum PieceType {
     King,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece {
     pub color: Color,
     pub kind: PieceType,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Square {
     Occupied(Piece),
     Empty,
@@ -132,7 +132,7 @@ fn to_algebraic_square(row: usize, col: usize) -> String {
     format!("{}{}", file, rank) // Combine file and rank into a string
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChessBoard {
     pub squares: [[Square; 8]; 8],
     pub active_color: Color,
@@ -398,15 +398,26 @@ impl ChessBoard {
     }
 
     pub fn make_move(&mut self, mv: Move) {
-        self.en_passant = None;
+
 
         let piece = self.squares[mv.from.row][mv.from.col];
 
         match piece {
-            Square::Empty => {}
+            Square::Empty => {
+                self.en_passant = None;
+            }
             Square::Occupied(p) => {
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
                 self.squares[mv.to.row][mv.to.col] = piece;
+
+                if let Some(en_passant) = self.en_passant {
+                    if mv.to == en_passant {
+                        //Remove piece from en passant
+                        self.squares[mv.from.row][mv.to.col] = Square::Empty;
+                    }
+                }
+                self.en_passant = None;
+
                 // Check if the move is a castling move and if castling is allowed
                 if p.kind == PieceType::King {
                     if mv.from.col == 4 && mv.to.col == 6 && mv.from.row == mv.to.row {
@@ -645,6 +656,9 @@ impl ChessBoard {
 
             let king_position = board_clone.find_king_position(self.active_color);
 
+            // if mv.0.from.col == 1 && mv.0.from.row == 3 {
+            //     println!("{:?}", mv);
+            // }
             if let Some(king_pos) = king_position {
                 if !board_clone.is_square_attacked_by_color(king_pos.row, king_pos.col, board_clone.active_color) {
                     legal_moves.push(mv); // Add move to legal moves if not leaving the king in check
@@ -1142,22 +1156,25 @@ mod tests {
             }
             assert!(generated_moves.contains( &mv.to_string()));
         }
+
+        //Test en passant on c6
+        let mut board = ChessBoard::from_fen("r3k2r/p2pqpb1/bn2pnp1/2pPN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R w KQkq c6 0 2").unwrap();
+        board.make_move(Move::from_algebraic("d5c6"));
+        let field = ChessField::from_algebraic("c5");
+        assert_eq!(board.squares[field.row][field.col],Square::Empty );
+        let expected_moves = vec!["e7c5", "e7d6", "e7d8", "e7f8"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("e7"), expected_moves.clone());
     }
 
     #[test]
-    fn test_braking() {
-        let mut board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
-        board.make_move(Move::from_algebraic("c7c5"));
-        let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves.clone());
-        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
-
-        for mv in expected_moves {
-            if !generated_moves.contains(&mv.to_string()) {
-                println!("Move {} is not includes", mv);
-            }
-            assert!(generated_moves.contains( &mv.to_string()));
-        }
+    fn test_breaking() {
+        let mut board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bb2p3/1pp5/1BN2NBn/pPPP1PPP/R3K2R b KQ - 1 2").unwrap();
+        let expected_moves = vec!["b4c3"];
+        let mut debug_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
+        debug_moves.sort();
+        println!("{:?}", debug_moves.len());
+        println!("{:?}", debug_moves);
+        assert_moves(board.generate_pseudo_moves_from_algebraic("b4"), expected_moves.clone());
     }
 
     #[test]
