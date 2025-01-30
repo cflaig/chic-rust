@@ -48,6 +48,7 @@ pub fn find_best_move_with_timeout(
     best_move.map(|mv| (mv, best_score, node_count))
 }
 
+#[allow(dead_code)]
 pub fn find_best_move_iterative(board: &ChessBoard, time_limit: Duration) -> Option<(Move, i32, u64, i32)> {
     let mut best_move = None;
     let mut total_node_count = 0;

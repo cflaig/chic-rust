@@ -745,6 +745,7 @@ impl ChessBoard {
         self.generate_legal_moves().is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn is_draw(&self) -> bool {
         self.is_draw_by_fifty_move_rule() || self.is_threefold_repetition()
     }
