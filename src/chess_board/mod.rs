@@ -1358,7 +1358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pinned_pieace() {
+    fn test_pinned_piece() {
         let board = ChessBoard::from_fen("1k6/8/8/8/3q4/8/1R6/K7 w - - 0 1").unwrap();
         assert_moves(board.generate_legal_moves(), vec!["a1a2", "a1b1"])
     }
