@@ -794,7 +794,7 @@ pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::Square::{Empty, Occupied};
+    use crate::chess_board::Square::{Occupied};
 
     impl ChessBoard {
         /// Creates an empty chess board
@@ -1437,7 +1437,7 @@ mod tests {
         assert_eq!(perft(&board, 3), 8902u64);
         assert_eq!(perft(&board, 4), 197281u64);
         assert_eq!(perft(&board, 5), 4865609u64);
-        //assert_eq!(perft(&board, 6, false), 119060324u64);
+        //assert_eq!(perft(&board, 6), 119060324u64);
     }
 
     #[test]
@@ -1447,7 +1447,7 @@ mod tests {
         assert_eq!(perft(&board, 2), 2039);
         assert_eq!(perft(&board, 3), 97862);
         assert_eq!(perft(&board, 4), 4085603);
-        //assert_eq!(perft(&board, 5, false), 193690690);
+        //assert_eq!(perft(&board, 5), 193690690);
     }
 
     #[test]
@@ -1499,5 +1499,38 @@ mod tests {
         assert_eq!(perft(&board, 3), 89890u64);
         assert_eq!(perft(&board, 4), 3894594u64);
         //assert_eq!(perft(&board, 5), 164075551u64);
+    }
+
+    #[test]
+    fn test_perft_pos_cf() {
+        let board = ChessBoard::from_fen("r3k2r/1pb2N2/2P5/3N3b/P2n4/1qB2pp1/5np1/R1Q1K2R w KQkq - 0 1").unwrap();
+        assert_eq!(perft(&board, 1), 40);
+        assert_eq!(perft(&board, 2), 2143 );
+        assert_eq!(perft(&board, 3), 75353);
+        assert_eq!(perft(&board, 4), 3958794);
+        //assert_eq!(perft(&board, 5), 140774393);
+    }
+
+    #[test]
+    fn test_perft_pos_web() {
+        //https://github.com/elcabesa/vajolet/blob/master/tests/perft.txt
+        let board = ChessBoard::from_fen("rnbqkbnr/1p4p1/3pp2p/p1p2p2/7P/2PP1P1N/PP1NP1P1/R1BQKB1R b Qkq - 0 1").unwrap();
+        assert_eq!(perft(&board, 1), 30);
+        assert_eq!(perft(&board, 2), 784 );
+        assert_eq!(perft(&board, 3), 23151);
+        assert_eq!(perft(&board, 4), 638663);
+        //assert_eq!(perft(&board, 5), 19171633);
+    }
+
+    #[test]
+    fn test_perft_pos_web2() {
+        //http://www.rocechess.ch/perft.html
+        let board = ChessBoard::from_fen("n1n5/PPPk4/8/8/8/8/4Kppp/5N1N b - - 0 1").unwrap();
+        assert_eq!(perft(&board, 1), 24);
+        assert_eq!(perft(&board, 2), 496 );
+        assert_eq!(perft(&board, 3), 9483);
+        assert_eq!(perft(&board, 4), 182838);
+        assert_eq!(perft(&board, 5), 3605103);
+        //assert_eq!(perft(&board, 6), 71179139);
     }
 }
