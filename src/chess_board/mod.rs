@@ -44,7 +44,6 @@ pub struct Move {
     pub from: ChessField,
     pub to: ChessField,
     pub promotion: Option<PieceType>,
-    pub score: i32,
 }
 
 impl fmt::Display for PieceType {
@@ -64,15 +63,22 @@ impl ChessField {
     pub fn new(row: usize, col: usize) -> Self {
         Self { row, col }
     }
+    pub fn from_algebraic(algebraic: &str) -> Self {
+        let file = algebraic.chars().next().unwrap();
+        let rank = algebraic.chars().nth(1).unwrap();
+        let col = (file as u8 - b'a') as usize;
+        let row = (rank as u8 - b'1') as usize;
+        Self { row, col }
+    }
 }
+
 impl Move {
     // Create a new Move
-    pub fn new(from_row: usize, from_col: usize, to_row: usize, to_col: usize, score: i32) -> Self {
+    pub fn new(from_row: usize, from_col: usize, to_row: usize, to_col: usize) -> Self {
         Self {
             from: ChessField::new(from_row, from_col),
             to: ChessField::new(to_row, to_col),
             promotion: None,
-            score,
         }
     }
 
@@ -93,6 +99,31 @@ impl Move {
             base_move
         }
     }
+        pub fn from_algebraic(algebraic: &str) -> Self {
+            let from =ChessField::from_algebraic(&algebraic[0..2]);
+            let to = ChessField::from_algebraic(&algebraic[2..4]);
+
+            let promotion = if algebraic.len() > 4 {
+                match algebraic.chars().nth(4) {
+                    Some('Q') => Some(PieceType::Queen),
+                    Some('R') => Some(PieceType::Rook),
+                    Some('B') => Some(PieceType::Bishop),
+                    Some('N') => Some(PieceType::Knight),
+                    Some('q') => Some(PieceType::Queen),
+                    Some('r') => Some(PieceType::Rook),
+                    Some('b') => Some(PieceType::Bishop),
+                    Some('n') => Some(PieceType::Knight),
+                    _ => None,
+                }
+            } else {
+                None // No promotion if the move string is only 4 characters
+            };
+            Self {
+                from,
+                to,
+                promotion,
+            }
+        }
 }
 
 fn to_algebraic_square(row: usize, col: usize) -> String {
@@ -152,8 +183,8 @@ impl ChessBoard {
         })
     }
 
-    pub fn generate_pseudo_moves(&self) -> Vec<Move> {
-        let mut all_moves = Vec::new();
+    pub fn generate_pseudo_moves(&self) -> Vec<(Move, i32)> {
+        let mut all_moves: Vec<(Move, i32)> = Vec::new();
 
         for row in 0..8 {
             for col in 0..8 {
@@ -164,7 +195,7 @@ impl ChessBoard {
         all_moves
     }
 
-    pub fn generate_pseudo_moves_from_position(&self, row: usize, col: usize) -> Vec<Move> {
+    pub fn generate_pseudo_moves_from_position(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         if let Square::Occupied(piece) = self.squares[row][col] {
             if piece.color == self.active_color {
                 let r = match piece.kind {
@@ -181,7 +212,7 @@ impl ChessBoard {
         Vec::new()
     }
 
-    fn generate_pawn_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_pawn_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         let mut moves = Vec::new();
         let forward = match self.active_color {
             Color::White => 1,
@@ -208,7 +239,7 @@ impl ChessBoard {
             if row == start_row {
                 let two_forward = (row as isize + 2 * forward) as usize;
                 if self.squares[two_forward][col] == Square::Empty {
-                    moves.push(Move::new(row, col, two_forward, col, NO_CAPTURE));
+                    moves.push((Move::new(row, col, two_forward, col), NO_CAPTURE));
                 }
             }
         }
@@ -238,7 +269,7 @@ impl ChessBoard {
         // En passant
         if let Some(en_passant) = self.en_passant {
             if new_row == en_passant.row && (col as isize - en_passant.col as isize).abs() == 1 {
-                moves.push(Move::new(row, col, en_passant.row, en_passant.col, CAPTURE_BASE));
+                moves.push((Move::new(row, col, en_passant.row, en_passant.col), CAPTURE_BASE));
             }
         }
 
@@ -252,19 +283,19 @@ impl ChessBoard {
         new_col: usize,
         promotion_row: usize,
         score: i32,
-        moves: &mut Vec<Move>,
+        moves: &mut Vec<(Move, i32)>,
     ) {
         if new_row == promotion_row {
             for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-                moves.push(Move::new(row, col, new_row, new_col, score + 1).with_promotion(promotion_piece));
+                moves.push((Move::new(row, col, new_row, new_col).with_promotion(promotion_piece), score + 1));
             }
         } else {
-            moves.push(Move::new(row, col, new_row, new_col, score));
+            moves.push((Move::new(row, col, new_row, new_col), score));
         }
     }
 
     /// Generate knight moves.
-    fn generate_knight_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_knight_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         const KNIGHT_MOVES: [(isize, isize); 8] =
             [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)];
 
@@ -272,8 +303,8 @@ impl ChessBoard {
     }
 
     /// Generate sliding piece moves (bishop, rook, queen).
-    fn generate_sliding_moves(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<Move> {
-        let mut moves: Vec<Move> = Vec::new();
+    fn generate_sliding_moves(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<(Move, i32)> {
+        let mut moves: Vec<(Move, i32)> = Vec::new();
 
         let moving_piece = match self.squares[row][col] {
             Square::Occupied(p) => p,
@@ -293,10 +324,10 @@ impl ChessBoard {
                 }
 
                 match self.squares[new_row as usize][new_col as usize] {
-                    Square::Empty => moves.push(Move::new(row, col, new_row as usize, new_col as usize, NO_CAPTURE)),
+                    Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
-                            moves.push(Move::new(row, col, new_row as usize, new_col as usize, CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
+                            moves.push((Move::new(row, col, new_row as usize, new_col as usize), CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
                         }
                         break; // Block sliding
                     }
@@ -308,26 +339,26 @@ impl ChessBoard {
     }
 
     /// Generate bishop moves.
-    fn generate_bishop_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_bishop_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         const BISHOP_DIRECTIONS: [(isize, isize); 4] = [(-1, -1), (-1, 1), (1, -1), (1, 1)];
         self.generate_sliding_moves(row, col, &BISHOP_DIRECTIONS)
     }
 
     /// Generate rook moves.
-    fn generate_rook_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_rook_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         const ROOK_DIRECTIONS: [(isize, isize); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
         self.generate_sliding_moves(row, col, &ROOK_DIRECTIONS)
     }
 
     /// Generate queen moves.
-    fn generate_queen_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_queen_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         const QUEEN_DIRECTIONS: [(isize, isize); 8] =
             [(-1, -1), (-1, 1), (1, -1), (1, 1), (0, -1), (0, 1), (-1, 0), (1, 0)];
         self.generate_sliding_moves(row, col, &QUEEN_DIRECTIONS)
     }
 
     /// Generate king moves (including castling).
-    fn generate_king_moves(&self, row: usize, col: usize) -> Vec<Move> {
+    fn generate_king_moves(&self, row: usize, col: usize) -> Vec<(Move, i32)> {
         const KING_MOVES: [(isize, isize); 8] = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
 
         let mut moves = self.generate_moves_from_directions(row, col, &KING_MOVES);
@@ -348,7 +379,7 @@ impl ChessBoard {
                 && !self.is_square_attacked(row, 5)
                 && !self.is_square_attacked(row, 6)
             {
-                moves.push(Move::new(row, 4, row, 6, CASTLING_SCORE)); // Move King: e1->g1 or e8->g8
+                moves.push((Move::new(row, 4, row, 6), CASTLING_SCORE)); // Move King: e1->g1 or e8->g8
             }
 
             // Queenside castling
@@ -360,7 +391,7 @@ impl ChessBoard {
                 && !self.is_square_attacked(row, 3)
                 && !self.is_square_attacked(row, 2)
             {
-                moves.push(Move::new(row, 4, row, 2, CASTLING_SCORE)); // Move King: e1->c1 or e8->c8
+                moves.push((Move::new(row, 4, row, 2), CASTLING_SCORE)); // Move King: e1->c1 or e8->c8
             }
         }
         moves
@@ -556,7 +587,7 @@ impl ChessBoard {
         false
     }
 
-    fn generate_moves_from_directions(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<Move> {
+    fn generate_moves_from_directions(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<(Move, i32)> {
         let mut moves = Vec::new();
 
 
@@ -572,10 +603,10 @@ impl ChessBoard {
             if new_row < 8
                 && new_col < 8 {
                 match self.squares[new_row as usize][new_col as usize] {
-                    Square::Empty => moves.push(Move::new(row, col, new_row as usize, new_col as usize, NO_CAPTURE)),
+                    Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
-                            moves.push(Move::new(row, col, new_row as usize, new_col as usize, CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
+                            moves.push((Move::new(row, col, new_row as usize, new_col as usize), CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
                         }
                     }
                 }
@@ -609,21 +640,19 @@ impl ChessBoard {
 
         // For each pseudo-legal move, check if it leaves the king in check
         for mv in pseudo_moves {
-            let mut board_clone = self.clone(); // Clone the board to simulate the move
-            board_clone.make_move(mv); // Make the move on the cloned board
+            let mut board_clone = self.clone();
+            board_clone.make_move(mv.0);
 
-            // Locate the king of the current player
             let king_position = board_clone.find_king_position(self.active_color);
 
-            // Check if the king is under attack after the move
             if let Some(king_pos) = king_position {
                 if !board_clone.is_square_attacked_by_color(king_pos.row, king_pos.col, board_clone.active_color) {
                     legal_moves.push(mv); // Add move to legal moves if not leaving the king in check
                 }
             }
         }
-        legal_moves.sort_by(|a, b| b.score.cmp(&a.score));
-        legal_moves
+        legal_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        legal_moves.iter().map(|m| m.0).collect()
     }
 
     pub fn generate_capture_moves(&self) -> Vec<Move> {
@@ -638,7 +667,7 @@ impl ChessBoard {
 
                         // Filter for capture moves
                         for mv in piece_moves {
-                            if let Square::Occupied(target_piece) = self.squares[mv.to.row][mv.to.col] {
+                            if let Square::Occupied(target_piece) = self.squares[mv.0.to.row][mv.0.to.col] {
                                 if target_piece.color != self.active_color {
                                     capture_moves.push(mv);
                                 }
@@ -649,8 +678,8 @@ impl ChessBoard {
             }
         }
 
-        capture_moves.sort_by(|a, b| b.score.cmp(&a.score));
-        capture_moves
+        capture_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        capture_moves.iter().map(|m| m.0).collect()
     }
 
     pub fn generate_legal_capture_moves(&self) -> Vec<Move> {
@@ -728,7 +757,7 @@ impl ChessBoard {
     }
 }
 
-pub fn perft(board: &ChessBoard, depth: u8, debug: bool) -> u64 {
+pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
     let mut node_count = 0u64;
 
     if depth <= 0 {
@@ -742,11 +771,7 @@ pub fn perft(board: &ChessBoard, depth: u8, debug: bool) -> u64 {
     for mv in moves {
         let mut new_board = board.clone();
         new_board.make_move(mv);
-        let count_per_move = perft(&new_board, depth - 1, false);
-        if debug {
-            println!("{}: {}", mv.as_algebraic(), count_per_move);
-        }
-        node_count += count_per_move;
+        node_count +=  perft(&new_board, depth - 1);
     }
     node_count
 }
@@ -759,7 +784,7 @@ mod tests {
     impl ChessBoard {
         /// Creates an empty chess board
         pub fn generate_pseudo_moves_from_chess_field(&self, pos: ChessField) -> Vec<Move> {
-            self.generate_pseudo_moves_from_position(pos.row, pos.col)
+            self.generate_pseudo_moves_from_position(pos.row, pos.col).into_iter().map(|m| m.0).collect()
         }
 
         pub fn generate_pseudo_moves_from_algebraic(&self, square: &str) -> Vec<Move> {
@@ -771,46 +796,6 @@ mod tests {
         pub fn as_algebraic(&self) -> String {
             to_algebraic_square(self.row, self.col)
         }
-        pub fn from_algebraic(algebraic: &str) -> Self {
-            let (row, col) = from_algebraic_square(algebraic);
-            Self { row, col }
-        }
-    }
-    impl Move {
-        pub fn from_algebraic(algebraic: &str) -> Self {
-            let from = from_algebraic_square(&algebraic[0..2]);
-            let to = from_algebraic_square(&algebraic[2..4]);
-
-            let promotion = if algebraic.len() > 4 {
-                match algebraic.chars().nth(4) {
-                    Some('Q') => Some(PieceType::Queen),
-                    Some('R') => Some(PieceType::Rook),
-                    Some('B') => Some(PieceType::Bishop),
-                    Some('N') => Some(PieceType::Knight),
-                    Some('q') => Some(PieceType::Queen),
-                    Some('r') => Some(PieceType::Rook),
-                    Some('b') => Some(PieceType::Bishop),
-                    Some('n') => Some(PieceType::Knight),
-                    _ => None,
-                }
-            } else {
-                None // No promotion if the move string is only 4 characters
-            };
-            Self {
-                from: ChessField::new(from.0, from.1),
-                to: ChessField::new(to.0, to.1),
-                promotion,
-                score: 0,
-            }
-        }
-    }
-
-    fn from_algebraic_square(square: &str) -> (usize, usize) {
-        let file = square.chars().next().unwrap();
-        let rank = square.chars().nth(1).unwrap();
-        let col = (file as u8 - b'a') as usize;
-        let row = (rank as u8 - b'1') as usize;
-        (row, col)
     }
 
     fn assert_moves(generated: Vec<Move>, mut expected: Vec<&str>) {
@@ -1142,7 +1127,37 @@ mod tests {
         let mut board = ChessBoard::from_fen("8/8/1p6/8/8/p7/PPP5/8 w - - 0 1").unwrap();
         board.make_move(Move::from_algebraic("b2b3"));
         let expected_moves = vec!["b6b5"];
-        assert_moves(board.generate_pseudo_moves(), expected_moves);
+        let moves = board.generate_pseudo_moves().into_iter().map(|m| m.0).collect();
+        assert_moves(moves, expected_moves);
+
+        let mut board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
+        board.make_move(Move::from_algebraic("c7c5"));
+        let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves.clone());
+        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
+
+        for mv in expected_moves {
+            if !generated_moves.contains(&mv.to_string()) {
+                println!("Move {} is not includes", mv);
+            }
+            assert!(generated_moves.contains( &mv.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_braking() {
+        let mut board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
+        board.make_move(Move::from_algebraic("c7c5"));
+        let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves.clone());
+        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
+
+        for mv in expected_moves {
+            if !generated_moves.contains(&mv.to_string()) {
+                println!("Move {} is not includes", mv);
+            }
+            assert!(generated_moves.contains( &mv.to_string()));
+        }
     }
 
     #[test]
@@ -1388,90 +1403,70 @@ mod tests {
     #[test]
     fn test_perft() {
         let board = ChessBoard::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
-        assert_eq!(perft(&board, 3, false), 8902u64);
-        assert_eq!(perft(&board, 4, false), 197281u64);
-        assert_eq!(perft(&board, 5, false), 4865609u64);
+        assert_eq!(perft(&board, 3), 8902u64);
+        assert_eq!(perft(&board, 4), 197281u64);
+        assert_eq!(perft(&board, 5), 4865609u64);
         //assert_eq!(perft(&board, 6, false), 119060324u64);
     }
 
     #[test]
     fn test_perft2() {
         let board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
-        assert_eq!(perft(&board, 1, false), 48);
-        assert_eq!(perft(&board, 2, false), 2039);
-        assert_eq!(perft(&board, 3, false), 97862);
-        assert_eq!(perft(&board, 4, false), 4085603);
+        assert_eq!(perft(&board, 1), 48);
+        assert_eq!(perft(&board, 2), 2039);
+        assert_eq!(perft(&board, 3), 97862);
+        assert_eq!(perft(&board, 4), 4085603);
         //assert_eq!(perft(&board, 5, false), 193690690);
     }
 
     #[test]
     fn test_perft3() {
         let board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
-        assert_eq!(perft(&board, 1, false), 14);
-        assert_eq!(perft(&board, 2, false), 191);
-        assert_eq!(perft(&board, 3, false), 2812);
-        assert_eq!(perft(&board, 4, false), 43238);
-        assert_eq!(perft(&board, 5, false), 674624);
-        assert_eq!(perft(&board, 6, false), 11030083);
+        assert_eq!(perft(&board, 1,), 14);
+        assert_eq!(perft(&board, 2), 191);
+        assert_eq!(perft(&board, 3), 2812);
+        assert_eq!(perft(&board, 4), 43238);
+        assert_eq!(perft(&board, 5), 674624);
+        assert_eq!(perft(&board, 6), 11030083);
     }
 
     #[test]
     fn test_perft4w() {
         let board = ChessBoard::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1").unwrap();
-        assert_eq!(perft(&board, 1, false), 6);
-        assert_eq!(perft(&board, 2, false), 264);
-        assert_eq!(perft(&board, 3, false), 9467);
-        assert_eq!(perft(&board, 4, false), 422333);
-        assert_eq!(perft(&board, 5, false), 15833292);
+        assert_eq!(perft(&board, 1), 6);
+        assert_eq!(perft(&board, 2), 264);
+        assert_eq!(perft(&board, 3), 9467);
+        assert_eq!(perft(&board, 4), 422333);
+        assert_eq!(perft(&board, 5), 15833292);
     }
 
     #[test]
     fn test_perft4b() {
         let board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1").unwrap();
-        assert_eq!(perft(&board, 1, false), 6);
-        assert_eq!(perft(&board, 2, false), 264);
-        assert_eq!(perft(&board, 3, false), 9467);
-        assert_eq!(perft(&board, 4, false), 422333);
-        assert_eq!(perft(&board, 5, false), 15833292);
+        assert_eq!(perft(&board, 1), 6);
+        assert_eq!(perft(&board, 2), 264);
+        assert_eq!(perft(&board, 3), 9467);
+        assert_eq!(perft(&board, 4), 422333);
+        assert_eq!(perft(&board, 5), 15833292);
     }
 
     #[test]
     fn test_perft_pos5() {
         let board = ChessBoard::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
-        assert_eq!(perft(&board, 1, false), 44u64);
-        assert_eq!(perft(&board, 2, false), 1486u64 );
-        assert_eq!(perft(&board, 3, true), 62379u64);
-        assert_eq!(perft(&board, 4, false), 2103487u64);
+        assert_eq!(perft(&board, 1), 44u64);
+        assert_eq!(perft(&board, 2), 1486u64 );
+        assert_eq!(perft(&board, 3), 62379u64);
+        assert_eq!(perft(&board, 4), 2103487u64);
         //assert_eq!(perft(&board, 5), 89941194u64);
     }
 
     #[test]
     fn test_perft_pos6() {
         let board = ChessBoard::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
-        assert_eq!(perft(&board, 1, false), 46u64);
-        assert_eq!(perft(&board, 2, false), 2079u64 );
-        assert_eq!(perft(&board, 3, false), 89890u64);
-        assert_eq!(perft(&board, 4, false), 3894594u64);
+        assert_eq!(perft(&board, 1), 46u64);
+        assert_eq!(perft(&board, 2), 2079u64 );
+        assert_eq!(perft(&board, 3), 89890u64);
+        assert_eq!(perft(&board, 4), 3894594u64);
         //assert_eq!(perft(&board, 5), 164075551u64);
-    }
-
-    fn perft(board: &ChessBoard, depth: u8, debug: bool) -> u64 {
-        let mut node_count = 0u64;
-
-        if depth <= 0 {
-            return 1u64;
-        }
-
-        let moves = board.generate_legal_moves();
-        for mv in moves {
-            let mut new_board = board.clone();
-            new_board.make_move(mv);
-            let count_per_move = perft(&new_board, depth - 1, false);
-            if debug {
-                println!("{}: {}", mv.as_algebraic(), count_per_move);
-            }
-            node_count += count_per_move;
-        }
-        node_count
     }
 }

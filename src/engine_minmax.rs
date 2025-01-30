@@ -96,7 +96,7 @@ fn negamax(board: &ChessBoard, depth: i32, node_count: &mut u64, last_capture_mo
 
     let mut max_score = MIN_EVALUATION;
 
-    for mv in board.generate_pseudo_moves() {
+    for (mv,_) in board.generate_pseudo_moves() {
         let mut new_board = board.clone();
         let last_capture_move = if new_board.squares[mv.to.row][mv.to.col] == Empty {
             None

@@ -88,12 +88,14 @@ pub fn highlight_move(pieces: &ModelRc<UiField>, board: &ChessBoard, position: C
         return;
     }
 
-    let moves = board.generate_pseudo_moves_from_position(position.row, position.col);
+    let moves = board.generate_legal_moves();
     for m in moves {
-        let index = m.to.row * 8 + m.to.col;
-        if let Some(mut p) = pieces.row_data(index) {
-            p.highlighted_for_move = true;
-            pieces.set_row_data(index, p);
+        if m.from.row == position.row && m.from.col == position.col {
+            let index = m.to.row * 8 + m.to.col;
+            if let Some(mut p) = pieces.row_data(index) {
+                p.highlighted_for_move = true;
+                pieces.set_row_data(index, p);
+            }
         }
     }
 }
@@ -121,9 +123,9 @@ pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
                     Some(source) => {
                         let moves = chess_board
                             .borrow()
-                            .generate_pseudo_moves_from_position(source.row, source.col);
+                            .generate_legal_moves().into_iter().filter(|&m| m.from.row == source.row && m.from.col == source.col).collect::<Vec<_>>();
                         if moves.iter().any(|m| m.to == clicked_field) {
-                            let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col, 0);
+                            let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col);
 
                             if let Occupied(piece) = chess_board.borrow().squares[source.row][source.col] {
                                 if piece.kind == PieceType::Pawn && (clicked_field.row == 0 || clicked_field.row == 7) {

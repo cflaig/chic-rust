@@ -42,6 +42,11 @@ fn main() {
                     ).default_value("3")
                         .value_parser(clap::value_parser!(usize))
                     )
+                .arg(arg!(
+            -m --moves <moves> "List of moves"
+                    ).num_args(1..)
+                    .value_parser(clap::value_parser!(String))
+                )
                 )
         .get_matches();
 
@@ -57,7 +62,8 @@ fn main() {
         Some(("perft", arg_matches)) => {
             let fen = arg_matches.get_one::<String>("fen").unwrap();
             let depth = arg_matches.get_one::<usize>("depth").unwrap();
-            perft(fen.clone(), *depth);
+            let moves = arg_matches.get_many::<String>("moves").unwrap_or_default().filter(|&v| !v.is_empty()).collect::<Vec<_>>();
+            perft(fen.clone(), moves, (*depth) as u8);
         }
         None => {
             play_with_ui();
@@ -71,7 +77,7 @@ fn play_with_ui() {
     //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";
     let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
     let generated_converted: Vec<_> = chess_board
-        .generate_pseudo_moves()
+        .generate_legal_moves()
         .iter()
         .map(|m| m.as_algebraic())
         .collect();
@@ -118,8 +124,30 @@ fn benchmark() {
     println!("{}", Table::new(table_rows).with(Style::modern()));
 }
 
-fn perft(fen: String, depth: usize) {
-    let chess_board = ChessBoard::from_fen(&fen).unwrap();
-    let num_nodes = chess_board::perft(&chess_board, depth as u8, true);
+fn perft(fen: String, moves: Vec<&String>, depth: u8) {
+    println!("Perft test for {} moves {:?} with depth {}", fen, moves, depth);
+    let mut chess_board = ChessBoard::from_fen(&fen).unwrap();
+    for m in moves {
+        let legal_move = chess_board.generate_legal_moves();
+        if legal_move.contains(&Move::from_algebraic(&m)) {
+            chess_board.make_move(Move::from_algebraic(&m));
+        } else {
+            panic!("Invalid move: {}", m);
+        }
+    }
+
+    let mut result_moves= Vec::<(String, u64)>::new();
+    for mv in chess_board.generate_legal_moves() {
+        let mut new_board = chess_board.clone();
+        new_board.make_move(mv);
+        result_moves.push((mv.as_algebraic(), chess_board::perft(&new_board, depth - 1)));
+    }
+    result_moves.sort();
+
+    let mut num_nodes = 0;
+    for (m, c) in result_moves {
+        println!("{}: {}", m, c);
+        num_nodes += c;
+    }
     println!("\nNodes searched: {}", num_nodes);
 }
