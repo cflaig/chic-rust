@@ -411,7 +411,7 @@ impl ChessBoard {
                 self.squares[mv.to.row][mv.to.col] = piece;
 
                 if let Some(en_passant) = self.en_passant {
-                    if mv.to == en_passant {
+                    if mv.to == en_passant && p.kind == PieceType::Pawn {
                         //Remove piece from en passant
                         self.squares[mv.from.row][mv.to.col] = Square::Empty;
                     }
@@ -781,7 +781,7 @@ pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
 
     let moves = board.generate_legal_moves();
     if moves.len() == 0 {
-        return 1u64;
+        return 0u64;
     }
     for mv in moves {
         let mut new_board = board.clone();
@@ -1165,17 +1165,30 @@ mod tests {
         assert_eq!(board.squares[field.row][field.col],Square::Empty );
         let expected_moves = vec!["e7c5", "e7d6", "e7d8", "e7f8"];
         assert_moves(board.generate_pseudo_moves_from_algebraic("e7"), expected_moves.clone());
+
+        let board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bb2p3/1pp5/1BN2NBn/pPPP1PPP/R3K2R b KQ - 1 2").unwrap();
+        let expected_moves = vec!["b4c3"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("b4"), expected_moves.clone());
     }
 
     #[test]
     fn test_breaking() {
-        let mut board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bb2p3/1pp5/1BN2NBn/pPPP1PPP/R3K2R b KQ - 1 2").unwrap();
-        let expected_moves = vec!["b4c3"];
+        let mut board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3pPk/8/4P3/8 b - g3 0 1").unwrap();
+        board.make_move(Move::from_algebraic("h4g3"));
+        let expected_moves = vec!["g4g5", "g4h5"];
         let mut debug_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
         debug_moves.sort();
         println!("{:?}", debug_moves.len());
         println!("{:?}", debug_moves);
-        assert_moves(board.generate_pseudo_moves_from_algebraic("b4"), expected_moves.clone());
+        assert_moves(board.generate_pseudo_moves_from_algebraic("g4"), expected_moves);
+    }
+
+    #[test]
+    fn test_make_move() {
+        let mut board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3pPk/8/4P3/8 b - g3 0 1").unwrap();
+        board.make_move(Move::from_algebraic("h4g3"));
+        let expected_moves = vec!["g4g5", "g4h5"];
+        assert_moves(board.generate_pseudo_moves_from_algebraic("g4"), expected_moves);
     }
 
     #[test]
