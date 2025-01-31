@@ -1,7 +1,7 @@
-use crate::chess_board::Color;
 use crate::chess_board::PieceType;
 use crate::chess_board::Square;
 use crate::chess_board::Square::Occupied;
+use crate::chess_board::{Color, Piece};
 use crate::engine_alpha_beta::find_best_move_iterative;
 use crate::ChessBoard;
 use crate::ChessField;
@@ -9,11 +9,11 @@ use crate::MainWindow;
 use crate::Move;
 use crate::UiField;
 use lazy_static::lazy_static;
-use slint::ComponentHandle;
 use slint::Image;
 use slint::Model;
 use slint::ModelRc;
 use slint::VecModel;
+use slint::{ComponentHandle, SharedString};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -37,6 +37,13 @@ lazy_static! {
         map.insert((Color::Black, PieceType::King), "ui/icons/Piece_Black_King.svg");
         map
     };
+}
+
+struct State {
+    chess_board: RefCell<ChessBoard>,
+    main_ui: MainWindow,
+    selected_field: RefCell<Option<ChessField>>,
+    active_move: RefCell<Option<Move>>,
 }
 
 // Simplify the mapping process by extracting common logic
@@ -76,7 +83,8 @@ pub fn map_chessboard_to_ui(chess_board: &ChessBoard) -> ModelRc<UiField> {
     ModelRc::new(VecModel::from(pieces))
 }
 
-pub fn highlight_move(pieces: &ModelRc<UiField>, board: &ChessBoard, position: ChessField) {
+pub fn highlight_move(state: &Rc<State>, position: ChessField) {
+    let pieces = state.main_ui.get_chess_fields();
     for index in 0..64 {
         if let Some(mut p) = pieces.row_data(index) {
             p.highlighted_for_move = false;
@@ -88,7 +96,7 @@ pub fn highlight_move(pieces: &ModelRc<UiField>, board: &ChessBoard, position: C
         return;
     }
 
-    let moves = board.generate_legal_moves();
+    let moves = state.chess_board.borrow().generate_legal_moves();
     for m in moves {
         if m.from.row == position.row && m.from.col == position.col {
             let index = m.to.row * 8 + m.to.col;
@@ -100,108 +108,134 @@ pub fn highlight_move(pieces: &ModelRc<UiField>, board: &ChessBoard, position: C
     }
 }
 
-pub fn setup_ui(main_window: &MainWindow, chess_board: ChessBoard) {
-    let main_window_weak = main_window.as_weak();
-    let chess_board = Rc::new(RefCell::new(chess_board));
-    let fields = map_chessboard_to_ui(&chess_board.borrow());
-    main_window.set_chess_fields(fields);
+pub fn setup_ui(fen: &str) {
+    let state = Rc::new(State {
+        chess_board: RefCell::new(ChessBoard::from_fen(fen).expect("Invalid FEN string")),
+        main_ui: MainWindow::new().unwrap(),
+        selected_field: RefCell::new(None),
+        active_move: RefCell::new(None),
+    });
+    let state_weak = Rc::downgrade(&state);
 
-    let mut selected_field: Option<ChessField> = None;
+    state.main_ui.on_clicked(move |index| {
+        if let Some(state) = state_weak.upgrade() {
+            let (row, col) = index_to_row_col(index.try_into().unwrap());
+            let clicked_field = ChessField::new(row, col);
+            let mut selected_field = state.selected_field.borrow_mut();
 
-    {
-        let chess_board = Rc::clone(&chess_board);
-        main_window.on_clicked(move |index| {
-            if let Some(main_window) = main_window_weak.upgrade() {
-                let (row, col) = index_to_row_col(index.try_into().unwrap());
-                let clicked_field = ChessField::new(row, col);
+            match *selected_field {
+                None => {
+                    *selected_field = Some(clicked_field);
+                    highlight_move(&state, clicked_field);
+                }
+                Some(source) => {
+                    let chess_board = state.chess_board.borrow().clone();
+                    let moves = chess_board
+                        .generate_legal_moves()
+                        .into_iter()
+                        .filter(|&m| m.from.row == source.row && m.from.col == source.col)
+                        .collect::<Vec<_>>();
+                    if moves.iter().any(|m| m.to == clicked_field) {
+                        let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col);
 
-                match selected_field {
-                    None => {
-                        selected_field = Some(clicked_field);
-                        highlight_move(&main_window.get_chess_fields(), &chess_board.borrow(), clicked_field);
-                    }
-                    Some(source) => {
-                        let moves = chess_board
-                            .borrow()
-                            .generate_legal_moves().into_iter().filter(|&m| m.from.row == source.row && m.from.col == source.col).collect::<Vec<_>>();
-                        if moves.iter().any(|m| m.to == clicked_field) {
-                            let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col);
-
-                            if let Occupied(piece) = chess_board.borrow().squares[source.row][source.col] {
-                                if piece.kind == PieceType::Pawn && (clicked_field.row == 0 || clicked_field.row == 7) {
-                                    // Pawn promotion logic
-                                    let promotion_choices = vec![
-                                        create_piece(PIECE_IMAGES.get(&(piece.color, PieceType::Queen)).unwrap()),
-                                        create_piece(PIECE_IMAGES.get(&(piece.color, PieceType::Rook)).unwrap()),
-                                        create_piece(PIECE_IMAGES.get(&(piece.color, PieceType::Bishop)).unwrap()),
-                                        create_piece(PIECE_IMAGES.get(&(piece.color, PieceType::Knight)).unwrap()),
-                                    ];
-
-                                    // Show promotion dialog
-                                    selected_field = None;
-                                    main_window.set_promotion_choices(ModelRc::new(VecModel::from(promotion_choices)));
-                                    main_window.set_promotion_dialog_visible(true);
-
-                                    // Handle promotion selection asynchronously
-                                    let value = main_window_weak.clone();
-                                    let chess_board_clone = chess_board.clone();
-                                    main_window.on_promotion_selected(move |choice_index| {
-                                        if let Some(main_window) = value.upgrade() {
-                                            let promoted_piece = match choice_index {
-                                                0 => PieceType::Queen,
-                                                1 => PieceType::Rook,
-                                                2 => PieceType::Bishop,
-                                                _ => PieceType::Knight,
-                                            };
-                                            main_window.set_promotion_dialog_visible(false);
-                                            let mv = mv.with_promotion(promoted_piece);
-                                            chess_board_clone.borrow_mut().make_move(mv);
-                                            main_window
-                                                .set_chess_fields(map_chessboard_to_ui(&chess_board_clone.borrow()));
-                                            make_engine_move(&main_window, &mut chess_board_clone.borrow_mut());
-                                        }
-                                    });
-                                    return;
-                                }
+                        if let Occupied(piece) = chess_board.squares[source.row][source.col] {
+                            if is_promotion(clicked_field, piece) {
+                                set_piece_color_of_the_promotion_dialog(&state.main_ui, piece.color);
+                                state.main_ui.set_promotion_dialog_visible(true);
+                                state.active_move.borrow_mut().replace(mv);
+                                return;
                             }
-
-                            let mut chess_board = chess_board.borrow_mut();
-                            chess_board.make_move(mv);
-                            println!("Best move: {}", mv.as_algebraic());
-
-                            main_window.set_chess_fields(map_chessboard_to_ui(&chess_board.clone()));
-                            selected_field = None;
-
-                            make_engine_move(&main_window, &mut chess_board);
-                        } else {
-                            highlight_move(
-                                &main_window.get_chess_fields(),
-                                &chess_board.borrow(),
-                                ChessField::new(8, 8),
-                            );
-                            selected_field = None;
                         }
+
+                        state.chess_board.borrow_mut().make_move(mv);
+                        state
+                            .main_ui
+                            .set_chess_fields(map_chessboard_to_ui(&state.chess_board.borrow()));
+                        make_engine_move(&state);
+                    } else {
+                        *selected_field = Some(clicked_field);
+                        highlight_move(&state, clicked_field);
                     }
                 }
             }
-        });
-    }
+        }
+    });
+
+    let state_weak = Rc::downgrade(&state);
+    state.main_ui.on_promotion_selected(move |choice_index| {
+        if let Some(state) = state_weak.upgrade() {
+            let promoted_piece = match choice_index {
+                0 => PieceType::Queen,
+                1 => PieceType::Rook,
+                2 => PieceType::Bishop,
+                _ => PieceType::Knight,
+            };
+            state.main_ui.set_promotion_dialog_visible(false);
+            if let Some(mut mv) = *state.active_move.borrow_mut() {
+                let mv = mv.with_promotion(promoted_piece);
+                state.chess_board.borrow_mut().make_move(mv);
+                state
+                    .main_ui
+                    .set_chess_fields(map_chessboard_to_ui(&state.chess_board.borrow()));
+                make_engine_move(&state);
+            }
+        }
+    });
+
+    let state_weak = Rc::downgrade(&state);
+    state.main_ui.on_make_move(move |mv_algebraic: SharedString| {
+        if let Some(state) = state_weak.upgrade() {
+            state
+                .chess_board
+                .borrow_mut()
+                .make_move(Move::from_algebraic(mv_algebraic.as_str()));
+            state
+                .main_ui
+                .set_chess_fields(map_chessboard_to_ui(&state.chess_board.borrow()));
+        }
+    });
+
+    let fields = map_chessboard_to_ui(&state.chess_board.borrow());
+    state.main_ui.set_chess_fields(fields);
+    state.main_ui.run().unwrap();
 }
 
-fn make_engine_move(main_window: &MainWindow, chess_board: &mut ChessBoard) {
-    if let Some((best_move, score, node_count, depth)) =
-        find_best_move_iterative(&chess_board.clone(), std::time::Duration::from_secs(12))
-    {
-        chess_board.make_move(best_move);
-        println!(
-            "Best move: {} with score: {} nodes: {} depth: {}",
-            best_move.as_algebraic(),
-            score,
-            node_count,
-            depth,
-        );
-        main_window.set_chess_fields(map_chessboard_to_ui(&chess_board.clone()));
-    } else {
-        println!("No best move found!");
-    }
+fn set_piece_color_of_the_promotion_dialog(main_window: &MainWindow, color: Color) {
+    let promotion_choices = vec![
+        create_piece(PIECE_IMAGES.get(&(color, PieceType::Queen)).unwrap()),
+        create_piece(PIECE_IMAGES.get(&(color, PieceType::Rook)).unwrap()),
+        create_piece(PIECE_IMAGES.get(&(color, PieceType::Bishop)).unwrap()),
+        create_piece(PIECE_IMAGES.get(&(color, PieceType::Knight)).unwrap()),
+    ];
+    main_window.set_promotion_choices(ModelRc::new(VecModel::from(promotion_choices)));
+}
+
+fn is_promotion(clicked_field: ChessField, piece: Piece) -> bool {
+    piece.kind == PieceType::Pawn && (clicked_field.row == 0 || clicked_field.row == 7)
+}
+
+fn make_engine_move(state: &Rc<State>) {
+    let state_weak = Rc::downgrade(state);
+    let chess_board = state.chess_board.borrow().clone();
+    let ui_weak = state_weak.upgrade().unwrap().main_ui.as_weak();
+
+    std::thread::spawn(move || {
+        if let Some((best_move, score, node_count, depth)) =
+            find_best_move_iterative(&chess_board, std::time::Duration::from_secs(5))
+        {
+            println!(
+                "Best move: {} with score: {} nodes: {} depth: {}",
+                best_move.as_algebraic(),
+                score,
+                node_count,
+                depth,
+            );
+            let handle = ui_weak.clone();
+            let mv = best_move.as_algebraic();
+            // now forward the data to the main thread using invoke_from_event_loop
+            slint::invoke_from_event_loop(move || handle.unwrap().invoke_make_move(SharedString::from(mv)));
+        } else {
+            println!("No best move found!");
+        }
+    });
 }

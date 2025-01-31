@@ -1,8 +1,10 @@
 use crate::chess_board::Move;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 mod chess_board;
-mod engine_minmax;
 mod engine_alpha_beta;
+mod engine_minmax;
 mod ui;
 
 use chess_board::ChessBoard;
@@ -33,21 +35,29 @@ fn main() {
         .subcommand(Command::new("benchmark").about("Runs a benchmark"))
         .subcommand(Command::new("play").about("Play a game"))
         .subcommand(
-            Command::new("perft").about("Run Perft test")
-                .arg(arg!(
-            -f --fen <FEN> "Board position"
-                    ).default_value(INITIAL_POSITION))
-                    .arg(arg!(
-            -x --depth <d> "depth"
-                    ).default_value("3")
-                        .value_parser(clap::value_parser!(usize))
-                    )
-                .arg(arg!(
-            -m --moves <moves> "List of moves"
-                    ).num_args(1..)
-                    .value_parser(clap::value_parser!(String))
+            Command::new("perft")
+                .about("Run Perft test")
+                .arg(
+                    arg!(
+                    -f --fen <FEN> "Board position"
+                            )
+                    .default_value(INITIAL_POSITION),
                 )
+                .arg(
+                    arg!(
+                    -x --depth <d> "depth"
+                            )
+                    .default_value("3")
+                    .value_parser(clap::value_parser!(usize)),
                 )
+                .arg(
+                    arg!(
+                    -m --moves <moves> "List of moves"
+                            )
+                    .num_args(1..)
+                    .value_parser(clap::value_parser!(String)),
+                ),
+        )
         .get_matches();
 
     let _debug = matches.get_flag("debug");
@@ -62,7 +72,11 @@ fn main() {
         Some(("perft", arg_matches)) => {
             let fen = arg_matches.get_one::<String>("fen").unwrap();
             let depth = arg_matches.get_one::<usize>("depth").unwrap();
-            let moves = arg_matches.get_many::<String>("moves").unwrap_or_default().filter(|&v| !v.is_empty()).collect::<Vec<_>>();
+            let moves = arg_matches
+                .get_many::<String>("moves")
+                .unwrap_or_default()
+                .filter(|&v| !v.is_empty())
+                .collect::<Vec<_>>();
             perft(fen.clone(), moves, (*depth) as u8);
         }
         None => {
@@ -75,17 +89,7 @@ fn main() {
 fn play_with_ui() {
     let fen = INITIAL_POSITION;
     //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";
-    let chess_board = ChessBoard::from_fen(fen).expect("Invalid FEN string");
-    let generated_converted: Vec<_> = chess_board
-        .generate_legal_moves()
-        .iter()
-        .map(|m| m.as_algebraic())
-        .collect();
-    println!("{:?}", generated_converted);
-
-    let main_window = MainWindow::new().unwrap();
-    setup_ui(&main_window, chess_board);
-    main_window.run().unwrap();
+    setup_ui(fen);
 }
 
 #[derive(Tabled)]
@@ -136,7 +140,7 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
         }
     }
 
-    let mut result_moves= Vec::<(String, u64)>::new();
+    let mut result_moves = Vec::<(String, u64)>::new();
     for mv in chess_board.generate_legal_moves() {
         let mut new_board = chess_board.clone();
         new_board.make_move(mv);

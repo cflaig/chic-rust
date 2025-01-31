@@ -14,7 +14,7 @@ component ChessField inherits Rectangle {
 
     Image {
         source: icon;
-        height: parent.height*0.75;
+        height: parent.height * 0.75;
     }
 
     Rectangle {
@@ -22,7 +22,6 @@ component ChessField inherits Rectangle {
         height: parent.height;
         background: highlighted_for_move ? #FFFF0060 : transparent;
     }
-
 
     TouchArea {
         clicked => {
@@ -66,18 +65,18 @@ export component MainWindow inherits Window {
     callback clicked(int);
     in property <[UiField]> chess_fields: [];
 
-        in property <[UiField]> promotion_choices: [];
-        in property <bool> promotion_dialog_visible: false;
-        callback promotion_selected(int);
+    callback make_move(string);
 
-
+    in property <[UiField]> promotion_choices: [];
+    in property <bool> promotion_dialog_visible: false;
+    callback promotion_selected(int);
 
     for chess_field[i] in chess_fields: ChessField {
         x: mod(i, 8) * min(parent.width, parent.height) / 8;
-        y: (7 - floor(i/8)) * min(parent.width, parent.height) / 8;
+        y: (7 - floor(i / 8)) * min(parent.width, parent.height) / 8;
         width: min(parent.width, parent.height) / 8;
         height: min(parent.width, parent.height) / 8;
-        background: mod(i + floor(i/8), 2) == 0 ? #AE8A68: #ECDAB9;
+        background: mod(i + floor(i / 8), 2) == 0 ? #AE8A68 : #ECDAB9;
         icon: chess_field.image;
         highlighted_for_move: chess_field.highlighted_for_move;
         index: i;
