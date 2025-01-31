@@ -98,7 +98,7 @@ fn negamax(board: &ChessBoard, depth: i32, alpha: i32, beta: i32, node_count: &m
     for mv in moves {
         let mut new_board = board.clone();
         new_board.make_move(mv);
-        let score = -negamax(&new_board, depth - 1,  -beta, -alpha, node_count);
+        let score = -negamax(&new_board, depth - 1, -beta, -alpha, node_count);
         max_score = max_score.max(score);
         alpha = alpha.max(score);
         if alpha >= beta {

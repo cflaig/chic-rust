@@ -99,31 +99,27 @@ impl Move {
             base_move
         }
     }
-        pub fn from_algebraic(algebraic: &str) -> Self {
-            let from =ChessField::from_algebraic(&algebraic[0..2]);
-            let to = ChessField::from_algebraic(&algebraic[2..4]);
+    pub fn from_algebraic(algebraic: &str) -> Self {
+        let from = ChessField::from_algebraic(&algebraic[0..2]);
+        let to = ChessField::from_algebraic(&algebraic[2..4]);
 
-            let promotion = if algebraic.len() > 4 {
-                match algebraic.chars().nth(4) {
-                    Some('Q') => Some(PieceType::Queen),
-                    Some('R') => Some(PieceType::Rook),
-                    Some('B') => Some(PieceType::Bishop),
-                    Some('N') => Some(PieceType::Knight),
-                    Some('q') => Some(PieceType::Queen),
-                    Some('r') => Some(PieceType::Rook),
-                    Some('b') => Some(PieceType::Bishop),
-                    Some('n') => Some(PieceType::Knight),
-                    _ => None,
-                }
-            } else {
-                None // No promotion if the move string is only 4 characters
-            };
-            Self {
-                from,
-                to,
-                promotion,
+        let promotion = if algebraic.len() > 4 {
+            match algebraic.chars().nth(4) {
+                Some('Q') => Some(PieceType::Queen),
+                Some('R') => Some(PieceType::Rook),
+                Some('B') => Some(PieceType::Bishop),
+                Some('N') => Some(PieceType::Knight),
+                Some('q') => Some(PieceType::Queen),
+                Some('r') => Some(PieceType::Rook),
+                Some('b') => Some(PieceType::Bishop),
+                Some('n') => Some(PieceType::Knight),
+                _ => None,
             }
-        }
+        } else {
+            None // No promotion if the move string is only 4 characters
+        };
+        Self { from, to, promotion }
+    }
 }
 
 fn to_algebraic_square(row: usize, col: usize) -> String {
@@ -148,9 +144,8 @@ const CAPTURE: i32 = 10000;
 const CAPTURE_BASE: i32 = CAPTURE + 10;
 const CASTLING_SCORE: i32 = 50;
 
-
 fn get_piece_value(piece: &PieceType) -> i32 {
-     match piece {
+    match piece {
         PieceType::Pawn => 1,
         PieceType::Knight => 3,
         PieceType::Bishop => 3,
@@ -233,7 +228,15 @@ impl ChessBoard {
 
         // Regular forward move
         if self.squares[new_row][col] == Square::Empty {
-            Self::add_pawn_moves_with_and_without_promotion(row, col, new_row, col, promotion_row, NO_CAPTURE, &mut moves);
+            Self::add_pawn_moves_with_and_without_promotion(
+                row,
+                col,
+                new_row,
+                col,
+                promotion_row,
+                NO_CAPTURE,
+                &mut moves,
+            );
 
             // Double move from start position
             if row == start_row {
@@ -287,7 +290,10 @@ impl ChessBoard {
     ) {
         if new_row == promotion_row {
             for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-                moves.push((Move::new(row, col, new_row, new_col).with_promotion(promotion_piece), score + 1));
+                moves.push((
+                    Move::new(row, col, new_row, new_col).with_promotion(promotion_piece),
+                    score + 1,
+                ));
             }
         } else {
             moves.push((Move::new(row, col, new_row, new_col), score));
@@ -308,8 +314,8 @@ impl ChessBoard {
 
         let moving_piece = match self.squares[row][col] {
             Square::Occupied(p) => p,
-                _ => return moves
-            };
+            _ => return moves,
+        };
 
         for &(dx, dy) in directions {
             let mut new_row = row as isize;
@@ -327,7 +333,10 @@ impl ChessBoard {
                     Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
-                            moves.push((Move::new(row, col, new_row as usize, new_col as usize), CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
+                            moves.push((
+                                Move::new(row, col, new_row as usize, new_col as usize),
+                                CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind),
+                            ));
                         }
                         break; // Block sliding
                     }
@@ -398,8 +407,6 @@ impl ChessBoard {
     }
 
     pub fn make_move(&mut self, mv: Move) {
-
-
         let piece = self.squares[mv.from.row][mv.from.col];
 
         match piece {
@@ -598,26 +605,32 @@ impl ChessBoard {
         false
     }
 
-    fn generate_moves_from_directions(&self, row: usize, col: usize, directions: &[(isize, isize)]) -> Vec<(Move, i32)> {
+    fn generate_moves_from_directions(
+        &self,
+        row: usize,
+        col: usize,
+        directions: &[(isize, isize)],
+    ) -> Vec<(Move, i32)> {
         let mut moves = Vec::new();
-
 
         let moving_piece = match self.squares[row][col] {
             Square::Occupied(p) => p,
-            _ => return moves
+            _ => return moves,
         };
 
         for &(dx, dy) in directions {
             let new_row = (row as isize + dx) as usize;
             let new_col = (col as isize + dy) as usize;
 
-            if new_row < 8
-                && new_col < 8 {
+            if new_row < 8 && new_col < 8 {
                 match self.squares[new_row as usize][new_col as usize] {
                     Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
-                            moves.push((Move::new(row, col, new_row as usize, new_col as usize), CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind)));
+                            moves.push((
+                                Move::new(row, col, new_row as usize, new_col as usize),
+                                CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind),
+                            ));
                         }
                     }
                 }
@@ -786,7 +799,7 @@ pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
     for mv in moves {
         let mut new_board = board.clone();
         new_board.make_move(mv);
-        node_count +=  perft(&new_board, depth - 1);
+        node_count += perft(&new_board, depth - 1);
     }
     node_count
 }
@@ -794,12 +807,15 @@ pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::Square::{Occupied};
+    use crate::chess_board::Square::Occupied;
 
     impl ChessBoard {
         /// Creates an empty chess board
         pub fn generate_pseudo_moves_from_chess_field(&self, pos: ChessField) -> Vec<Move> {
-            self.generate_pseudo_moves_from_position(pos.row, pos.col).into_iter().map(|m| m.0).collect()
+            self.generate_pseudo_moves_from_position(pos.row, pos.col)
+                .into_iter()
+                .map(|m| m.0)
+                .collect()
         }
 
         pub fn generate_pseudo_moves_from_algebraic(&self, square: &str) -> Vec<Move> {
@@ -1145,24 +1161,26 @@ mod tests {
         let moves = board.generate_pseudo_moves().into_iter().map(|m| m.0).collect();
         assert_moves(moves, expected_moves);
 
-        let mut board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
+        let mut board =
+            ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
         board.make_move(Move::from_algebraic("c7c5"));
         let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
         assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves.clone());
-        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
+        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m| m.as_algebraic()).collect();
 
         for mv in expected_moves {
             if !generated_moves.contains(&mv.to_string()) {
                 println!("Move {} is not includes", mv);
             }
-            assert!(generated_moves.contains( &mv.to_string()));
+            assert!(generated_moves.contains(&mv.to_string()));
         }
 
         //Test en passant on c6
-        let mut board = ChessBoard::from_fen("r3k2r/p2pqpb1/bn2pnp1/2pPN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R w KQkq c6 0 2").unwrap();
+        let mut board =
+            ChessBoard::from_fen("r3k2r/p2pqpb1/bn2pnp1/2pPN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R w KQkq c6 0 2").unwrap();
         board.make_move(Move::from_algebraic("d5c6"));
         let field = ChessField::from_algebraic("c5");
-        assert_eq!(board.squares[field.row][field.col],Square::Empty );
+        assert_eq!(board.squares[field.row][field.col], Square::Empty);
         let expected_moves = vec!["e7c5", "e7d6", "e7d8", "e7f8"];
         assert_moves(board.generate_pseudo_moves_from_algebraic("e7"), expected_moves.clone());
 
@@ -1176,7 +1194,7 @@ mod tests {
         let mut board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3pPk/8/4P3/8 b - g3 0 1").unwrap();
         board.make_move(Move::from_algebraic("h4g3"));
         let expected_moves = vec!["g4g5", "g4h5"];
-        let mut debug_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m|m.as_algebraic()).collect();
+        let mut debug_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m| m.as_algebraic()).collect();
         debug_moves.sort();
         println!("{:?}", debug_moves.len());
         println!("{:?}", debug_moves);
@@ -1442,7 +1460,8 @@ mod tests {
 
     #[test]
     fn test_perft2() {
-        let board = ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
+        let board =
+            ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
         assert_eq!(perft(&board, 1), 48);
         assert_eq!(perft(&board, 2), 2039);
         assert_eq!(perft(&board, 3), 97862);
@@ -1485,7 +1504,7 @@ mod tests {
     fn test_perft_pos5() {
         let board = ChessBoard::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
         assert_eq!(perft(&board, 1), 44u64);
-        assert_eq!(perft(&board, 2), 1486u64 );
+        assert_eq!(perft(&board, 2), 1486u64);
         assert_eq!(perft(&board, 3), 62379u64);
         assert_eq!(perft(&board, 4), 2103487u64);
         //assert_eq!(perft(&board, 5), 89941194u64);
@@ -1493,9 +1512,10 @@ mod tests {
 
     #[test]
     fn test_perft_pos6() {
-        let board = ChessBoard::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
+        let board =
+            ChessBoard::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
         assert_eq!(perft(&board, 1), 46u64);
-        assert_eq!(perft(&board, 2), 2079u64 );
+        assert_eq!(perft(&board, 2), 2079u64);
         assert_eq!(perft(&board, 3), 89890u64);
         assert_eq!(perft(&board, 4), 3894594u64);
         //assert_eq!(perft(&board, 5), 164075551u64);
@@ -1505,7 +1525,7 @@ mod tests {
     fn test_perft_pos_cf() {
         let board = ChessBoard::from_fen("r3k2r/1pb2N2/2P5/3N3b/P2n4/1qB2pp1/5np1/R1Q1K2R w KQkq - 0 1").unwrap();
         assert_eq!(perft(&board, 1), 40);
-        assert_eq!(perft(&board, 2), 2143 );
+        assert_eq!(perft(&board, 2), 2143);
         assert_eq!(perft(&board, 3), 75353);
         assert_eq!(perft(&board, 4), 3958794);
         //assert_eq!(perft(&board, 5), 140774393);
@@ -1514,9 +1534,10 @@ mod tests {
     #[test]
     fn test_perft_pos_web() {
         //https://github.com/elcabesa/vajolet/blob/master/tests/perft.txt
-        let board = ChessBoard::from_fen("rnbqkbnr/1p4p1/3pp2p/p1p2p2/7P/2PP1P1N/PP1NP1P1/R1BQKB1R b Qkq - 0 1").unwrap();
+        let board =
+            ChessBoard::from_fen("rnbqkbnr/1p4p1/3pp2p/p1p2p2/7P/2PP1P1N/PP1NP1P1/R1BQKB1R b Qkq - 0 1").unwrap();
         assert_eq!(perft(&board, 1), 30);
-        assert_eq!(perft(&board, 2), 784 );
+        assert_eq!(perft(&board, 2), 784);
         assert_eq!(perft(&board, 3), 23151);
         assert_eq!(perft(&board, 4), 638663);
         //assert_eq!(perft(&board, 5), 19171633);
@@ -1527,7 +1548,7 @@ mod tests {
         //http://www.rocechess.ch/perft.html
         let board = ChessBoard::from_fen("n1n5/PPPk4/8/8/8/8/4Kppp/5N1N b - - 0 1").unwrap();
         assert_eq!(perft(&board, 1), 24);
-        assert_eq!(perft(&board, 2), 496 );
+        assert_eq!(perft(&board, 2), 496);
         assert_eq!(perft(&board, 3), 9483);
         assert_eq!(perft(&board, 4), 182838);
         assert_eq!(perft(&board, 5), 3605103);
