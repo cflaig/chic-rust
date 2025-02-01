@@ -1,6 +1,10 @@
 use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
 use rand::prelude::SliceRandom;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::{Instant, SystemTime};
 
 #[allow(dead_code)]
 pub fn find_best_move(board: &ChessBoard, depth: i32, random: bool) -> Option<(Move, i32, u64)> {

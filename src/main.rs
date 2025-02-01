@@ -1,6 +1,4 @@
 use crate::chess_board::Move;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::Instant;
 mod chess_board;
 mod engine_alpha_beta;
@@ -86,6 +84,7 @@ fn main() {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen(start))]
 fn play_with_ui() {
     let fen = INITIAL_POSITION;
     //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";

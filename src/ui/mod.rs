@@ -39,7 +39,7 @@ lazy_static! {
     };
 }
 
-struct State {
+pub struct State {
     chess_board: RefCell<ChessBoard>,
     main_ui: MainWindow,
     selected_field: RefCell<Option<ChessField>>,
@@ -171,7 +171,7 @@ pub fn setup_ui(fen: &str) {
                 _ => PieceType::Knight,
             };
             state.main_ui.set_promotion_dialog_visible(false);
-            if let Some(mut mv) = *state.active_move.borrow_mut() {
+            if let Some(mv) = *state.active_move.borrow_mut() {
                 let mv = mv.with_promotion(promoted_piece);
                 state.chess_board.borrow_mut().make_move(mv);
                 state
@@ -214,6 +214,7 @@ fn is_promotion(clicked_field: ChessField, piece: Piece) -> bool {
     piece.kind == PieceType::Pawn && (clicked_field.row == 0 || clicked_field.row == 7)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn make_engine_move(state: &Rc<State>) {
     let state_weak = Rc::downgrade(state);
     let chess_board = state.chess_board.borrow().clone();
@@ -221,7 +222,7 @@ fn make_engine_move(state: &Rc<State>) {
 
     std::thread::spawn(move || {
         if let Some((best_move, score, node_count, depth)) =
-            find_best_move_iterative(&chess_board, std::time::Duration::from_secs(5))
+            find_best_move_iterative(&chess_board, std::time::Duration::from_secs(7))
         {
             println!(
                 "Best move: {} with score: {} nodes: {} depth: {}",
@@ -233,9 +234,33 @@ fn make_engine_move(state: &Rc<State>) {
             let handle = ui_weak.clone();
             let mv = best_move.as_algebraic();
             // now forward the data to the main thread using invoke_from_event_loop
-            slint::invoke_from_event_loop(move || handle.unwrap().invoke_make_move(SharedString::from(mv)));
+            let _ = slint::invoke_from_event_loop(move || handle.unwrap().invoke_make_move(SharedString::from(mv)));
         } else {
             println!("No best move found!");
         }
     });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn make_engine_move(state: &Rc<State>) {
+    let state_weak = Rc::downgrade(state);
+    let chess_board = state.chess_board.borrow().clone();
+    let ui_weak = state_weak.upgrade().unwrap().main_ui.as_weak();
+    if let Some((best_move, score, node_count, depth)) =
+        find_best_move_iterative(&chess_board, std::time::Duration::from_secs(3))
+    {
+        println!(
+            "Best move: {} with score: {} nodes: {} depth: {}",
+            best_move.as_algebraic(),
+            score,
+            node_count,
+            depth,
+        );
+        let handle = ui_weak.clone();
+        let mv = best_move.as_algebraic();
+        // now forward the data to the main thread using invoke_from_event_loop
+        let _ = slint::invoke_from_event_loop(move || handle.unwrap().invoke_make_move(SharedString::from(mv)));
+    } else {
+        println!("No best move found!");
+    }
 }
