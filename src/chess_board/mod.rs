@@ -623,12 +623,12 @@ impl ChessBoard {
             let new_col = (col as isize + dy) as usize;
 
             if new_row < 8 && new_col < 8 {
-                match self.squares[new_row as usize][new_col as usize] {
-                    Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
+                match self.squares[new_row][new_col] {
+                    Square::Empty => moves.push((Move::new(row, col, new_row, new_col), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
                             moves.push((
-                                Move::new(row, col, new_row as usize, new_col as usize),
+                                Move::new(row, col, new_row, new_col),
                                 CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind),
                             ));
                         }
@@ -788,12 +788,12 @@ impl ChessBoard {
 pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
     let mut node_count = 0u64;
 
-    if depth <= 0 {
+    if depth == 0 {
         return 1u64;
     }
 
     let moves = board.generate_legal_moves();
-    if moves.len() == 0 {
+    if moves.is_empty() {
         return 0u64;
     }
     for mv in moves {

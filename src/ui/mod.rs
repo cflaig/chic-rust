@@ -2,7 +2,7 @@ use crate::chess_board::PieceType;
 use crate::chess_board::Square;
 use crate::chess_board::Square::Occupied;
 use crate::chess_board::{Color, Piece};
-use crate::engine_alpha_beta::find_best_move_iterative;
+use crate::engines::engine_alpha_beta::find_best_move_iterative;
 use crate::ChessBoard;
 use crate::ChessField;
 use crate::MainWindow;
@@ -221,9 +221,13 @@ fn make_engine_move(state: &Rc<State>) {
     let ui_weak = state_weak.upgrade().unwrap().main_ui.as_weak();
 
     std::thread::spawn(move || {
-        if let Some((best_move, score, node_count, depth)) =
-            find_best_move_iterative(&chess_board, std::time::Duration::from_secs(7))
-        {
+        if let Some((best_move, score, node_count, depth)) = find_best_move_iterative(
+            &chess_board,
+            std::time::Duration::from_secs(7),
+            |_depth: i32, _eval: i32, _nodes: u64, _elapsed: std::time::Duration| {
+                // No-op
+            },
+        ) {
             println!(
                 "Best move: {} with score: {} nodes: {} depth: {}",
                 best_move.as_algebraic(),

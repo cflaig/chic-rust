@@ -1,10 +1,50 @@
 use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
+use crate::engines::{ChessEngine, InfoCallback};
 use rand::prelude::SliceRandom;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::{Instant, SystemTime};
+
+pub struct AlphaBetaEngine {
+    board: ChessBoard,
+}
+
+impl AlphaBetaEngine {
+    pub fn new() -> Self {
+        AlphaBetaEngine {
+            board: ChessBoard::new(),
+        }
+    }
+}
+impl ChessEngine for AlphaBetaEngine {
+    fn name(&self) -> &str {
+        "Chic Alpha Beta Engine"
+    }
+    fn author(&self) -> &str {
+        "Cyril Flaig"
+    }
+    fn set_position(&mut self, position: &str) -> Result<(), String> {
+        self.board = ChessBoard::from_fen(position)?;
+        Ok(())
+    }
+    fn make_move(&mut self, move_algebraic_notation: &str) -> Result<(), &'static str> {
+        let mv = Move::from_algebraic(move_algebraic_notation);
+        self.board.make_move(mv);
+        Ok(())
+    }
+    fn find_best_move_iterative(
+        &self,
+        time_limit: Duration,
+        info_callback: InfoCallback,
+    ) -> Option<(Move, i32, u64, i32)> {
+        find_best_move_iterative(&self.board, time_limit, info_callback)
+    }
+    fn get_active_player(&self) -> Color {
+        self.board.active_color
+    }
+}
 
 #[allow(dead_code)]
 pub fn find_best_move(board: &ChessBoard, depth: i32, random: bool) -> Option<(Move, i32, u64)> {
@@ -20,20 +60,31 @@ pub fn find_best_move_with_timeout(
     let mut best_score = i32::MIN;
     let mut node_count = 0;
 
+    let deadline = Instant::now() + remaining_time;
+
     let mut moves = board.generate_legal_moves();
     if random {
         moves.shuffle(&mut rand::thread_rng());
     }
-    let start_time = Instant::now();
 
     for mv in moves {
-        if start_time.elapsed() > remaining_time {
+        if Instant::now() > deadline {
             return None;
         }
         let mut new_board = board.clone();
         new_board.make_move(mv);
 
-        let score = -negamax(&new_board, depth, MIN_EVALUATION, -MIN_EVALUATION, &mut node_count);
+        let score = match negamax(
+            &new_board,
+            depth,
+            MIN_EVALUATION,
+            -MIN_EVALUATION,
+            deadline,
+            &mut node_count,
+        ) {
+            None => return None,
+            Some(score) => -score,
+        };
 
         if score > best_score {
             best_score = score;
@@ -45,7 +96,11 @@ pub fn find_best_move_with_timeout(
     best_move.map(|mv| (mv, best_score, node_count))
 }
 
-pub fn find_best_move_iterative(board: &ChessBoard, time_limit: Duration) -> Option<(Move, i32, u64, i32)> {
+pub fn find_best_move_iterative(
+    board: &ChessBoard,
+    time_limit: Duration,
+    info_callback: InfoCallback,
+) -> Option<(Move, i32, u64, i32)> {
     let mut best_move = None;
     let mut total_node_count = 0;
 
@@ -57,13 +112,14 @@ pub fn find_best_move_iterative(board: &ChessBoard, time_limit: Duration) -> Opt
 
         // Call the existing find_best_move function for the current depth.
         if let Some((current_move, current_score, node_count)) =
-            find_best_move_with_timeout(board, depth, true, remaining_time)
+            find_best_move_with_timeout(board, depth, false, remaining_time)
         {
             best_move = Some((current_move, current_score, total_node_count + node_count, depth));
             total_node_count += node_count;
         } else {
             break;
         }
+        info_callback(depth, best_move.unwrap().1, total_node_count, start_time.elapsed());
 
         depth += 1; // Increase the depth for the next iteration
     }
@@ -76,14 +132,24 @@ const WIN: i32 = 10_000_000;
 const LOSS: i32 = -10_000_000;
 const DRAW: i32 = 0;
 
-fn negamax(board: &ChessBoard, depth: i32, alpha: i32, beta: i32, node_count: &mut u64) -> i32 {
+fn negamax(
+    board: &ChessBoard,
+    depth: i32,
+    alpha: i32,
+    beta: i32,
+    deadline: Instant,
+    node_count: &mut u64,
+) -> Option<i32> {
+    if Instant::now() > deadline {
+        return None;
+    }
     *node_count += 1;
     if board.is_threefold_repetition() {
-        return 0;
+        return Some(0);
     }
     if depth <= 0 {
         *node_count -= 1;
-        return quiescence_search_prunning(board, node_count, alpha, beta);
+        return quiescence_search_prunning(board, node_count, alpha, beta, deadline);
     }
 
     let mut alpha = alpha;
@@ -93,16 +159,19 @@ fn negamax(board: &ChessBoard, depth: i32, alpha: i32, beta: i32, node_count: &m
     if moves.is_empty() {
         // Handle checkmate or stalemate
         if board.is_checkmate() {
-            return LOSS - depth;
+            return Some(LOSS - depth);
         } else if board.is_stalemate() {
-            return DRAW;
+            return Some(DRAW);
         }
     }
 
     for mv in moves {
         let mut new_board = board.clone();
         new_board.make_move(mv);
-        let score = -negamax(&new_board, depth - 1, -beta, -alpha, node_count);
+        let score = match negamax(&new_board, depth - 1, -beta, -alpha, deadline, node_count) {
+            None => return None,
+            Some(score) => -score,
+        };
         max_score = max_score.max(score);
         alpha = alpha.max(score);
         if alpha >= beta {
@@ -111,10 +180,19 @@ fn negamax(board: &ChessBoard, depth: i32, alpha: i32, beta: i32, node_count: &m
         }
     }
 
-    max_score
+    Some(max_score)
 }
 
-fn quiescence_search_prunning(board: &ChessBoard, node_count: &mut u64, mut alpha: i32, beta: i32) -> i32 {
+fn quiescence_search_prunning(
+    board: &ChessBoard,
+    node_count: &mut u64,
+    mut alpha: i32,
+    beta: i32,
+    deadline: Instant,
+) -> Option<i32> {
+    if Instant::now() > deadline {
+        return None;
+    }
     *node_count += 1;
 
     let stand_pat = evaluate_board(board) * if board.active_color == Color::White { 1 } else { -1 };
@@ -122,7 +200,7 @@ fn quiescence_search_prunning(board: &ChessBoard, node_count: &mut u64, mut alph
     alpha = alpha.max(stand_pat);
 
     if alpha >= beta {
-        return max_score;
+        return Some(max_score);
     }
 
     let moves = board.generate_legal_capture_moves();
@@ -132,7 +210,10 @@ fn quiescence_search_prunning(board: &ChessBoard, node_count: &mut u64, mut alph
     for mv in moves {
         let mut new_board = board.clone();
         new_board.make_move(mv);
-        let score = -quiescence_search_prunning(&new_board, node_count, -beta, -alpha);
+        let score = match quiescence_search_prunning(&new_board, node_count, -beta, -alpha, deadline) {
+            None => return None,
+            Some(score) => -score,
+        };
         max_score = max_score.max(score);
         alpha = alpha.max(score);
         if alpha >= beta {
@@ -140,7 +221,7 @@ fn quiescence_search_prunning(board: &ChessBoard, node_count: &mut u64, mut alph
             break;
         }
     }
-    max_score
+    Some(max_score)
 }
 
 #[rustfmt::skip]

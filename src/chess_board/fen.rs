@@ -1,5 +1,7 @@
 use super::{ChessBoard, ChessField, Color, Piece, PieceType, Square};
 
+pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 /// Parses a square like "e3" into (file, rank).
 fn parse_square(square: &str) -> Result<ChessField, String> {
     if square.len() != 2 {

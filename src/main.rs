@@ -1,20 +1,20 @@
 use crate::chess_board::Move;
 use std::time::Instant;
 mod chess_board;
-mod engine_alpha_beta;
-mod engine_minmax;
+mod engines;
 mod ui;
 
 use chess_board::ChessBoard;
 use chess_board::ChessField;
 
-use crate::engine_minmax::find_best_move;
+use crate::engines::engine_minmax::find_best_move;
 use ui::setup_ui;
 
 use clap::arg;
 use clap::command;
 use clap::Command;
 
+use crate::engines::uci::run_uci_interface;
 use tabled::settings::Style;
 use tabled::Table;
 use tabled::Tabled;
@@ -32,6 +32,7 @@ fn main() {
         ))
         .subcommand(Command::new("benchmark").about("Runs a benchmark"))
         .subcommand(Command::new("play").about("Play a game"))
+        .subcommand(Command::new("uci").about("Run in CLI mode"))
         .subcommand(
             Command::new("perft")
                 .about("Run Perft test")
@@ -67,6 +68,9 @@ fn main() {
         Some(("play", _)) => {
             play_with_ui();
         }
+        Some(("uci", _)) => {
+            run_uci_interface();
+        }
         Some(("perft", arg_matches)) => {
             let fen = arg_matches.get_one::<String>("fen").unwrap();
             let depth = arg_matches.get_one::<usize>("depth").unwrap();
@@ -78,7 +82,7 @@ fn main() {
             perft(fen.clone(), moves, (*depth) as u8);
         }
         None => {
-            play_with_ui();
+            run_uci_interface();
         }
         _ => unreachable!("Exhausted list of subcommands"),
     }
@@ -132,8 +136,8 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
     let mut chess_board = ChessBoard::from_fen(&fen).unwrap();
     for m in moves {
         let legal_move = chess_board.generate_legal_moves();
-        if legal_move.contains(&Move::from_algebraic(&m)) {
-            chess_board.make_move(Move::from_algebraic(&m));
+        if legal_move.contains(&Move::from_algebraic(m)) {
+            chess_board.make_move(Move::from_algebraic(m));
         } else {
             panic!("Invalid move: {}", m);
         }
