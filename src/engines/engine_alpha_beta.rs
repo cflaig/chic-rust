@@ -1,6 +1,7 @@
 use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
 use crate::engines::{ChessEngine, InfoCallback};
 use rand::prelude::SliceRandom;
+use std::collections::BTreeMap;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -17,6 +18,7 @@ pub struct AlphaBetaEngine {
     board: ChessBoard,
     principal_variation: [[Move; MAX_PLY]; MAX_PLY],
     max_depth: usize,
+    repetition_map: BTreeMap<u64, u8>,
 }
 
 impl AlphaBetaEngine {
@@ -25,12 +27,14 @@ impl AlphaBetaEngine {
             board: ChessBoard::new(),
             principal_variation: [[Move::new(99, 99, 99, 99); MAX_PLY]; MAX_PLY],
             max_depth: 20,
+            repetition_map: BTreeMap::new(),
         }
     }
 
     pub fn with_board(board: ChessBoard) -> Self {
         let mut engine = AlphaBetaEngine::new();
         engine.board = board;
+        engine.insert_hash(engine.board.hash);
         engine
     }
 }
@@ -43,11 +47,17 @@ impl ChessEngine for AlphaBetaEngine {
     }
     fn set_position(&mut self, position: &str) -> Result<(), String> {
         self.board = ChessBoard::from_fen(position)?;
+        self.repetition_map.clear();
+        self.insert_hash(self.board.hash);
         Ok(())
     }
     fn make_move(&mut self, move_algebraic_notation: &str) -> Result<(), &'static str> {
         let mv = Move::from_algebraic(move_algebraic_notation);
         self.board.make_move(mv);
+        if self.board.halfmove_clock == 0 {
+            self.repetition_map.clear();
+        }
+        self.insert_hash(self.board.hash);
         Ok(())
     }
     fn find_best_move_iterative(
@@ -121,15 +131,7 @@ impl AlphaBetaEngine {
             let mut new_board = self.board.clone();
             new_board.make_move(mv);
 
-            let score = match self.negamax(
-                &new_board,
-                depth,
-                MIN_EVALUATION,
-                -MIN_EVALUATION,
-                1,
-                deadline,
-                &mut node_count,
-            ) {
+            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -alpha, 1, deadline, &mut node_count) {
                 None => return None,
                 Some(score) => -score,
             };
@@ -161,8 +163,17 @@ impl AlphaBetaEngine {
         }
         *node_count += 1;
 
+        let hash = board.hash;
+        if let Some(count) = self.repetition_map.get(&hash) {
+            if *count == 2 {
+                return Some(0);
+            }
+        }
+        self.insert_hash(hash);
+
         if depth <= 0 || ply > MAX_PLY {
             *node_count -= 1;
+            self.remove_hash(&hash);
             return AlphaBetaEngine::quiescence_search_prunning(board, node_count, alpha, beta, deadline);
         }
 
@@ -173,8 +184,10 @@ impl AlphaBetaEngine {
         if moves.is_empty() {
             // Handle checkmate or stalemate
             if board.is_checkmate() {
+                self.remove_hash(&hash);
                 return Some(LOSS - depth);
             } else if board.is_stalemate() {
+                self.remove_hash(&hash);
                 return Some(DRAW);
             }
         }
@@ -184,6 +197,7 @@ impl AlphaBetaEngine {
             new_board.make_move(mv);
             let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, deadline, node_count) {
                 None => {
+                    self.remove_hash(&hash);
                     return None;
                 }
                 Some(score) => -score,
@@ -201,7 +215,27 @@ impl AlphaBetaEngine {
             }
         }
 
+        self.remove_hash(&hash);
         Some(max_score)
+    }
+
+    fn remove_hash(&mut self, hash: &u64) {
+        if let Some(count) = self.repetition_map.get_mut(hash) {
+            if *count > 1 {
+                *count -= 1;
+            } else {
+                self.repetition_map.remove(hash);
+            }
+        }
+    }
+
+    fn insert_hash(&mut self, hash: u64) {
+        match self.repetition_map.get_mut(&hash) {
+            Some(count) => *count += 1,
+            None => {
+                self.repetition_map.insert(hash, 1);
+            }
+        }
     }
 
     fn save_principal_variation(&mut self, mv: Move, depth: usize, ply: usize) {

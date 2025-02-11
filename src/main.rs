@@ -82,7 +82,7 @@ fn main() {
             perft(fen.clone(), moves, (*depth) as u8);
         }
         None => {
-            run_uci_interface();
+            play_with_ui();
         }
         _ => unreachable!("Exhausted list of subcommands"),
     }
