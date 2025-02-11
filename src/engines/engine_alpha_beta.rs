@@ -7,15 +7,31 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::{Instant, SystemTime};
 
+pub const MAX_PLY: usize = 20;
+const MIN_EVALUATION: i32 = i32::MIN + 1; // +1 is important because -MIN is not a i32 number
+const WIN: i32 = 10_000_000;
+const LOSS: i32 = -10_000_000;
+const DRAW: i32 = 0;
+
 pub struct AlphaBetaEngine {
     board: ChessBoard,
+    principal_variation: [[Move; MAX_PLY]; MAX_PLY],
+    max_depth: usize,
 }
 
 impl AlphaBetaEngine {
     pub fn new() -> Self {
         AlphaBetaEngine {
             board: ChessBoard::new(),
+            principal_variation: [[Move::new(99, 99, 99, 99); MAX_PLY]; MAX_PLY],
+            max_depth: 20,
         }
+    }
+
+    pub fn with_board(board: ChessBoard) -> Self {
+        let mut engine = AlphaBetaEngine::new();
+        engine.board = board;
+        engine
     }
 }
 impl ChessEngine for AlphaBetaEngine {
@@ -35,197 +51,214 @@ impl ChessEngine for AlphaBetaEngine {
         Ok(())
     }
     fn find_best_move_iterative(
-        &self,
+        &mut self,
         time_limit: Duration,
         info_callback: InfoCallback,
     ) -> Option<(Move, i32, u64, i32)> {
-        find_best_move_iterative(&self.board, time_limit, info_callback)
+        let mut best_move = None;
+        let mut total_node_count = 0;
+
+        let start_time = Instant::now();
+        let mut depth = 1;
+
+        while start_time.elapsed() < time_limit {
+            let remaining_time = time_limit - start_time.elapsed();
+
+            // Call the existing find_best_move function for the current depth.
+            if let Some((current_move, current_score, node_count)) =
+                self.find_best_move_with_timeout(depth, false, remaining_time)
+            {
+                best_move = Some((current_move, current_score, total_node_count + node_count, depth));
+                total_node_count += node_count;
+            } else {
+                break;
+            }
+            let pv = self.principal_variation[0][0..(depth + 1) as usize]
+                .iter()
+                .map(|mv| mv.as_algebraic())
+                .collect::<Vec<_>>()
+                .join(" ");
+            info_callback(depth, best_move.unwrap().1, total_node_count, start_time.elapsed(), pv);
+
+            depth += 1; // Increase the depth for the next iteration
+        }
+
+        best_move
     }
     fn get_active_player(&self) -> Color {
         self.board.active_color
     }
 }
 
-#[allow(dead_code)]
-pub fn find_best_move(board: &ChessBoard, depth: i32, random: bool) -> Option<(Move, i32, u64)> {
-    find_best_move_with_timeout(board, depth, random, Duration::from_secs(60 * 60))
-}
-pub fn find_best_move_with_timeout(
-    board: &ChessBoard,
-    depth: i32,
-    random: bool,
-    remaining_time: Duration,
-) -> Option<(Move, i32, u64)> {
-    let mut best_move = None;
-    let mut best_score = i32::MIN;
-    let mut node_count = 0;
+impl AlphaBetaEngine {
+    #[allow(dead_code)]
+    pub fn find_best_move(&mut self, depth: i32, random: bool) -> Option<(Move, i32, u64)> {
+        self.find_best_move_with_timeout(depth, random, Duration::from_secs(60 * 60))
+    }
+    pub fn find_best_move_with_timeout(
+        &mut self,
+        depth: i32,
+        random: bool,
+        remaining_time: Duration,
+    ) -> Option<(Move, i32, u64)> {
+        let mut best_move = None;
+        let mut best_score = i32::MIN;
+        let mut node_count = 0;
 
-    let deadline = Instant::now() + remaining_time;
+        let deadline = Instant::now() + remaining_time;
 
-    let mut moves = board.generate_legal_moves();
-    if random {
-        moves.shuffle(&mut rand::thread_rng());
+        let mut moves = self.board.generate_legal_moves();
+        if random {
+            moves.shuffle(&mut rand::thread_rng());
+        }
+
+        let mut alpha = MIN_EVALUATION;
+
+        for mv in moves {
+            if Instant::now() > deadline {
+                return None;
+            }
+            let mut new_board = self.board.clone();
+            new_board.make_move(mv);
+
+            let score = match self.negamax(
+                &new_board,
+                depth,
+                MIN_EVALUATION,
+                -MIN_EVALUATION,
+                1,
+                deadline,
+                &mut node_count,
+            ) {
+                None => return None,
+                Some(score) => -score,
+            };
+
+            if score > best_score {
+                alpha = score;
+                best_score = score;
+                best_move = Some(mv);
+                self.save_principal_variation(mv, depth as usize, 0);
+            }
+            //println!("With depth {} Move: {} Score: {}", depth, mv.as_algebraic(), score);
+        }
+
+        best_move.map(|mv| (mv, best_score, node_count))
     }
 
-    for mv in moves {
+    fn negamax(
+        &mut self,
+        board: &ChessBoard,
+        depth: i32,
+        alpha: i32,
+        beta: i32,
+        ply: usize,
+        deadline: Instant,
+        node_count: &mut u64,
+    ) -> Option<i32> {
         if Instant::now() > deadline {
             return None;
         }
-        let mut new_board = board.clone();
-        new_board.make_move(mv);
-
-        let score = match negamax(
-            &new_board,
-            depth,
-            MIN_EVALUATION,
-            -MIN_EVALUATION,
-            deadline,
-            &mut node_count,
-        ) {
-            None => return None,
-            Some(score) => -score,
-        };
-
-        if score > best_score {
-            best_score = score;
-            best_move = Some(mv);
+        *node_count += 1;
+        if board.is_threefold_repetition() {
+            return Some(0);
         }
-        //println!("With depth {} Move: {} Score: {}", depth, mv.as_algebraic(), score);
-    }
 
-    best_move.map(|mv| (mv, best_score, node_count))
-}
-
-pub fn find_best_move_iterative(
-    board: &ChessBoard,
-    time_limit: Duration,
-    info_callback: InfoCallback,
-) -> Option<(Move, i32, u64, i32)> {
-    let mut best_move = None;
-    let mut total_node_count = 0;
-
-    let start_time = Instant::now();
-    let mut depth = 1;
-
-    while start_time.elapsed() < time_limit {
-        let remaining_time = time_limit - start_time.elapsed();
-
-        // Call the existing find_best_move function for the current depth.
-        if let Some((current_move, current_score, node_count)) =
-            find_best_move_with_timeout(board, depth, false, remaining_time)
-        {
-            best_move = Some((current_move, current_score, total_node_count + node_count, depth));
-            total_node_count += node_count;
-        } else {
-            break;
+        if depth <= 0 || ply > MAX_PLY {
+            *node_count -= 1;
+            return AlphaBetaEngine::quiescence_search_prunning(board, node_count, alpha, beta, deadline);
         }
-        info_callback(depth, best_move.unwrap().1, total_node_count, start_time.elapsed());
 
-        depth += 1; // Increase the depth for the next iteration
+        let mut alpha = alpha;
+        let mut max_score = MIN_EVALUATION;
+
+        let moves = board.generate_legal_moves();
+        if moves.is_empty() {
+            // Handle checkmate or stalemate
+            if board.is_checkmate() {
+                return Some(LOSS - depth);
+            } else if board.is_stalemate() {
+                return Some(DRAW);
+            }
+        }
+
+        for mv in moves {
+            let mut new_board = board.clone();
+            new_board.make_move(mv);
+            let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, deadline, node_count) {
+                None => {
+                    return None;
+                }
+                Some(score) => -score,
+            };
+            if score > max_score {
+                max_score = score;
+                if score > alpha {
+                    alpha = score;
+                    self.save_principal_variation(mv, depth as usize, ply);
+                    if alpha >= beta {
+                        // Beta cutoff fail soft
+                        break;
+                    }
+                }
+            }
+        }
+
+        Some(max_score)
     }
 
-    best_move
-}
-
-const MIN_EVALUATION: i32 = i32::MIN + 1; // +1 is important because -MIN is not a i32 number
-const WIN: i32 = 10_000_000;
-const LOSS: i32 = -10_000_000;
-const DRAW: i32 = 0;
-
-fn negamax(
-    board: &ChessBoard,
-    depth: i32,
-    alpha: i32,
-    beta: i32,
-    deadline: Instant,
-    node_count: &mut u64,
-) -> Option<i32> {
-    if Instant::now() > deadline {
-        return None;
-    }
-    *node_count += 1;
-    if board.is_threefold_repetition() {
-        return Some(0);
-    }
-    if depth <= 0 {
-        *node_count -= 1;
-        return quiescence_search_prunning(board, node_count, alpha, beta, deadline);
-    }
-
-    let mut alpha = alpha;
-    let mut max_score = MIN_EVALUATION;
-
-    let moves = board.generate_legal_moves();
-    if moves.is_empty() {
-        // Handle checkmate or stalemate
-        if board.is_checkmate() {
-            return Some(LOSS - depth);
-        } else if board.is_stalemate() {
-            return Some(DRAW);
+    fn save_principal_variation(&mut self, mv: Move, depth: usize, ply: usize) {
+        self.principal_variation[ply][0] = mv;
+        for i in 0..depth {
+            self.principal_variation[ply][i + 1] = self.principal_variation[ply + 1][i];
         }
     }
 
-    for mv in moves {
-        let mut new_board = board.clone();
-        new_board.make_move(mv);
-        let score = match negamax(&new_board, depth - 1, -beta, -alpha, deadline, node_count) {
-            None => return None,
-            Some(score) => -score,
-        };
-        max_score = max_score.max(score);
-        alpha = alpha.max(score);
+    fn quiescence_search_prunning(
+        board: &ChessBoard,
+        node_count: &mut u64,
+        mut alpha: i32,
+        beta: i32,
+        deadline: Instant,
+    ) -> Option<i32> {
+        if Instant::now() > deadline {
+            return None;
+        }
+        *node_count += 1;
+
+        let stand_pat =
+            AlphaBetaEngine::evaluate_board(board) * if board.active_color == Color::White { 1 } else { -1 };
+        let mut max_score = stand_pat;
+        alpha = alpha.max(stand_pat);
+
         if alpha >= beta {
-            // Beta cutoff fail soft
-            break;
+            return Some(max_score);
         }
-    }
 
-    Some(max_score)
-}
+        let moves = board.generate_legal_capture_moves();
 
-fn quiescence_search_prunning(
-    board: &ChessBoard,
-    node_count: &mut u64,
-    mut alpha: i32,
-    beta: i32,
-    deadline: Instant,
-) -> Option<i32> {
-    if Instant::now() > deadline {
-        return None;
-    }
-    *node_count += 1;
+        //println!("Number of Capture Moves: {}", moves.len() );
 
-    let stand_pat = evaluate_board(board) * if board.active_color == Color::White { 1 } else { -1 };
-    let mut max_score = stand_pat;
-    alpha = alpha.max(stand_pat);
-
-    if alpha >= beta {
-        return Some(max_score);
-    }
-
-    let moves = board.generate_legal_capture_moves();
-
-    //println!("Number of Capture Moves: {}", moves.len() );
-
-    for mv in moves {
-        let mut new_board = board.clone();
-        new_board.make_move(mv);
-        let score = match quiescence_search_prunning(&new_board, node_count, -beta, -alpha, deadline) {
-            None => return None,
-            Some(score) => -score,
-        };
-        max_score = max_score.max(score);
-        alpha = alpha.max(score);
-        if alpha >= beta {
-            // Beta cutoff
-            break;
+        for mv in moves {
+            let mut new_board = board.clone();
+            new_board.make_move(mv);
+            let score =
+                match AlphaBetaEngine::quiescence_search_prunning(&new_board, node_count, -beta, -alpha, deadline) {
+                    None => return None,
+                    Some(score) => -score,
+                };
+            max_score = max_score.max(score);
+            alpha = alpha.max(score);
+            if alpha >= beta {
+                // Beta cutoff
+                break;
+            }
         }
+        Some(max_score)
     }
-    Some(max_score)
-}
 
-#[rustfmt::skip]
-const PAWN_SQUARE_TABLE: [[i32; 8]; 8] = [
+    #[rustfmt::skip]
+    const PAWN_SQUARE_TABLE: [[i32; 8]; 8] = [
     [  0,   0,   0,   0,   0,   0,   0,   0],
     [100, 100, 100, 100, 100, 100, 100, 100],
     [ 25,  50,  50,  50,  50,  50,  50,  25],
@@ -236,8 +269,8 @@ const PAWN_SQUARE_TABLE: [[i32; 8]; 8] = [
     [  0,   0,   0,   0,   0,   0,   0,   0],
 ];
 
-#[rustfmt::skip]
-const KNIGHT_SQUARE_TABLE: [[i32; 8]; 8] = [
+    #[rustfmt::skip]
+    const KNIGHT_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
     [-100,   0,   0,   0,   0,   0,   0,-100],
     [-100,   0,  50,  50,  50,  50,   0,-100],
@@ -248,8 +281,8 @@ const KNIGHT_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
 ];
 
-#[rustfmt::skip]
-const BISHOP_SQUARE_TABLE: [[i32; 8]; 8] = [
+    #[rustfmt::skip]
+    const BISHOP_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
     [-100,   0,   0,   0,   0,   0,   0,-100],
     [-100,   0,  50,  50,  50,  50,   0,-100],
@@ -260,8 +293,8 @@ const BISHOP_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
 ];
 
-#[rustfmt::skip]
-const KING_SQUARE_TABLE: [[i32; 8]; 8] = [
+    #[rustfmt::skip]
+    const KING_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-100, -100, -100, -100, -100, -100, -100, -100],
     [-100, -100, -100, -100, -100, -100, -100, -100],
     [-100, -100, -100, -100, -100, -100, -100, -100],
@@ -272,50 +305,51 @@ const KING_SQUARE_TABLE: [[i32; 8]; 8] = [
     [ 300,  350,  400,  -50,    0,  -50,  500,  300],
 ];
 
-/// Evaluates the board state and assigns a score based on material balance.
-fn evaluate_board(board: &ChessBoard) -> i32 {
-    let mut evaluation = 0;
+    /// Evaluates the board state and assigns a score based on material balance.
+    fn evaluate_board(board: &ChessBoard) -> i32 {
+        let mut evaluation = 0;
 
-    for row in 0..8 {
-        for col in 0..8 {
-            match board.squares[row][col] {
-                Square::Occupied(piece) => {
-                    let piece_value = match piece.kind {
-                        PieceType::Pawn => 1_000,
-                        PieceType::Knight => 3_000,
-                        PieceType::Bishop => 3_000,
-                        PieceType::Rook => 5_000,
-                        PieceType::Queen => 9_000,
-                        PieceType::King => WIN, // if one king is on the board, it is won
-                    };
+        for row in 0..8 {
+            for col in 0..8 {
+                match board.squares[row][col] {
+                    Square::Occupied(piece) => {
+                        let piece_value = match piece.kind {
+                            PieceType::Pawn => 1_000,
+                            PieceType::Knight => 3_000,
+                            PieceType::Bishop => 3_000,
+                            PieceType::Rook => 5_000,
+                            PieceType::Queen => 9_000,
+                            PieceType::King => WIN, // if one king is on the board, it is won
+                        };
 
-                    //Check position value
-                    let psq_row = match piece.color {
-                        Color::White => 7 - row,
-                        Color::Black => row,
-                    };
+                        //Check position value
+                        let psq_row = match piece.color {
+                            Color::White => 7 - row,
+                            Color::Black => row,
+                        };
 
-                    let possition_value = match piece.kind {
-                        PieceType::King => KING_SQUARE_TABLE[psq_row][col],
-                        PieceType::Pawn => PAWN_SQUARE_TABLE[psq_row][col],
-                        PieceType::Knight => KNIGHT_SQUARE_TABLE[psq_row][col],
-                        PieceType::Bishop => BISHOP_SQUARE_TABLE[psq_row][col],
-                        _ => 0,
-                    };
+                        let possition_value = match piece.kind {
+                            PieceType::King => AlphaBetaEngine::KING_SQUARE_TABLE[psq_row][col],
+                            PieceType::Pawn => AlphaBetaEngine::PAWN_SQUARE_TABLE[psq_row][col],
+                            PieceType::Knight => AlphaBetaEngine::KNIGHT_SQUARE_TABLE[psq_row][col],
+                            PieceType::Bishop => AlphaBetaEngine::BISHOP_SQUARE_TABLE[psq_row][col],
+                            _ => 0,
+                        };
 
-                    let piece_evaluation = piece_value + possition_value;
-                    evaluation += match piece.color {
-                        Color::White => piece_evaluation,
-                        Color::Black => -piece_evaluation,
-                    };
+                        let piece_evaluation = piece_value + possition_value;
+                        evaluation += match piece.color {
+                            Color::White => piece_evaluation,
+                            Color::Black => -piece_evaluation,
+                        };
+                    }
+
+                    Square::Empty => {}
                 }
-
-                Square::Empty => {}
             }
         }
-    }
 
-    evaluation
+        evaluation
+    }
 }
 
 #[cfg(test)]
@@ -325,37 +359,53 @@ mod tests {
 
     #[test]
     fn test_some_positions() {
-        let board = ChessBoard::from_fen("8/4p3/8/3P4/8/8/8/8 b - - 0 1").unwrap();
-        if let Some((best_move, score, nodes)) = find_best_move(&board, 2, false) {
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("8/4p3/8/3P4/8/8/8/8 b - - 0 1");
+        if let Some((best_move, score, nodes)) = engine.find_best_move(2, false) {
+            assert!(false); //no valid position
+        } else {
+            println!("No best move found!");
+        }
+
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("8/7k/5KR1/8/8/8/8/8 w - - 0 1");
+        let depth = 5usize;
+        if let Some((best_move, score, nodes)) = engine.find_best_move(depth as i32, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
                 best_move.as_algebraic(),
                 score,
                 nodes
             );
+            println!(
+                "Principal variation: {}",
+                engine.principal_variation[0][0..depth + 1]
+                    .iter()
+                    .map(|mv| mv.as_algebraic())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
         } else {
             println!("No best move found!");
         }
 
-        let board = ChessBoard::from_fen("8/7k/5KR1/8/8/8/8/8 w - - 0 1").unwrap();
-        if let Some((best_move, score, nodes)) = find_best_move(&board, 6, false) {
+        let depth = 6usize;
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
+        if let Some((best_move, score, nodes)) = engine.find_best_move(depth as i32, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
                 best_move.as_algebraic(),
                 score,
                 nodes
             );
-        } else {
-            println!("No best move found!");
-        }
-
-        let board = ChessBoard::from_fen("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26").unwrap();
-        if let Some((best_move, score, nodes)) = find_best_move(&board, 3, false) {
             println!(
-                "Best move: {} with score: {} evaluated nodes: {}",
-                best_move.as_algebraic(),
-                score,
-                nodes
+                "Principal variation: {}",
+                engine.principal_variation[0][0..depth + 1]
+                    .iter()
+                    .map(|mv| mv.as_algebraic())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             );
         } else {
             println!("No best move found!");
@@ -364,8 +414,9 @@ mod tests {
 
     #[test]
     fn test_from_a_played_position() {
-        let board = ChessBoard::from_fen("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26").unwrap();
-        if let Some((best_move, score, nodes)) = find_best_move(&board, 0, false) {
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
+        if let Some((best_move, score, nodes)) = engine.find_best_move(0, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
                 best_move.as_algebraic(),
@@ -379,8 +430,9 @@ mod tests {
 
     #[test]
     fn test_from_before_rochade() {
-        let board = ChessBoard::from_fen("rnbqkbnr/p1p2ppp/1p1p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4").unwrap();
-        if let Some((best_move, score, nodes)) = find_best_move(&board, 0, false) {
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("rnbqkbnr/p1p2ppp/1p1p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4");
+        if let Some((best_move, score, nodes)) = engine.find_best_move(0, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
                 best_move.as_algebraic(),
@@ -391,6 +443,38 @@ mod tests {
             println!("No best move found!");
         }
         let board = ChessBoard::from_fen("rnbqkbnr/p1p2ppp/1p1p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 1 4").unwrap();
-        println!("Evaluation: {}", evaluate_board(&board));
+        println!("Evaluation: {}", AlphaBetaEngine::evaluate_board(&board));
+    }
+
+    #[test]
+    fn test_perpetual_check() {
+        let mut engine = AlphaBetaEngine::new();
+        engine.set_position("1k1r2rq/6pp/Q7/8/8/8/6PP/7K w - - 0 1");
+        engine.make_move("a6b6");
+        engine.make_move("b8a8");
+        engine.make_move("b6a6");
+        engine.make_move("a8b8");
+
+        let depth = 5usize;
+        for depth in 0..6 {
+            if let Some((best_move, score, nodes)) = engine.find_best_move(depth, false) {
+                println!(
+                    "Best move: {} with score: {} evaluated nodes: {}",
+                    best_move.as_algebraic(),
+                    score,
+                    nodes
+                );
+                println!(
+                    "Principal variation: {}",
+                    engine.principal_variation[0][0..(depth + 1) as usize]
+                        .iter()
+                        .map(|mv| mv.as_algebraic())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            } else {
+                println!("No best move found!");
+            }
+        }
     }
 }
