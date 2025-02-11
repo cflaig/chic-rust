@@ -41,7 +41,7 @@ pub(crate) fn run_uci_interface() {
             }
             "position" => match parse_position(tokens) {
                 Ok((start_fen, moves)) => {
-                    engine.set_position(start_fen).unwrap();
+                    engine.set_position(start_fen.as_str()).unwrap();
                     for mv in moves {
                         engine.make_move(mv.as_str()).unwrap();
                     }
@@ -52,18 +52,9 @@ pub(crate) fn run_uci_interface() {
             },
             "go" => {
                 let search_time = parse_go_command(&tokens[1..], engine.get_active_player());
-                let start_time = std::time::Instant::now();
                 let (best_move, score, node_count, depth) =
                     engine.find_best_move_iterative(search_time, uci_info_callback).unwrap();
-                let elapsed = start_time.elapsed().as_millis();
-                println!(
-                    "info depth {} score cp {} time {} nodes {} nps {}",
-                    depth,
-                    score / 10,
-                    elapsed,
-                    node_count,
-                    (node_count * 1000) as u128 / elapsed
-                );
+
                 println!("bestmove {}", best_move.as_algebraic());
                 stdout().flush().unwrap();
             }
@@ -81,7 +72,7 @@ pub(crate) fn run_uci_interface() {
     }
 }
 
-fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration) {
+fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration, pv: String) {
     let time_ms = elapsed.as_millis();
     let nps = if elapsed.as_secs_f64() > 0.0 {
         (nodes as f64 / elapsed.as_secs_f64()) as u64
@@ -90,17 +81,18 @@ fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration) {
     };
 
     println!(
-        "info depth {} score cp {} time {} nodes {} nps {}",
+        "info depth {} score cp {} time {} nodes {} nps {} pv {}",
         depth,
         score / 10,
         time_ms,
         nodes,
-        nps
+        nps,
+        pv
     );
     stdout().flush().unwrap();
 }
 
-fn parse_position(tokens: Vec<&str>) -> result::Result<(&str, Vec<String>), &'static str> {
+fn parse_position(tokens: Vec<&str>) -> result::Result<(String, Vec<String>), &'static str> {
     if tokens.len() < 2 {
         return Err("Invalid position command");
     }
@@ -108,10 +100,14 @@ fn parse_position(tokens: Vec<&str>) -> result::Result<(&str, Vec<String>), &'st
     let mut idx = 1;
 
     let position = match tokens[idx] {
-        "startpos" => INITIAL_POSITION,
+        "startpos" => INITIAL_POSITION.to_string(),
         "fen" => {
-            idx += 1;
-            tokens[idx]
+            let mut v: Vec<String> = Vec::new();
+            for token in tokens.iter().take(idx + 7).skip(idx + 1) {
+                v.push((*token).to_string());
+            }
+            idx += 6;
+            v.join(" ")
         }
         _ => return Err("Invalid position command"),
     };
