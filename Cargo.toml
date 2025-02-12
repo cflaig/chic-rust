@@ -25,3 +25,6 @@ crate-type = ["cdylib"]
 
 [build-dependencies]
 slint-build = "1.9.1"
+
+[profile.release]
+debug = "full"

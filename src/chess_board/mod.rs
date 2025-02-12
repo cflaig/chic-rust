@@ -1,6 +1,7 @@
 use crate::chess_board::zobrist_hash::ZOBRIST;
 use circular_buffer::CircularBuffer;
 use std::fmt;
+use std::iter::RepeatN;
 
 pub mod fen;
 pub mod zobrist_hash;
@@ -137,7 +138,9 @@ pub struct ChessBoard {
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
     pub hash: u64,
-    pub repetition_map: CircularBuffer<32, u64>,
+    pub repetition_map: [u64; 32],
+    pub repetition_map_head: usize,
+    pub king_position: [ChessField; 2],
 }
 
 const NO_CAPTURE: i32 = 0;
@@ -167,8 +170,20 @@ impl ChessBoard {
             halfmove_clock: 0,           // Halfmove clock starts at 0
             fullmove_number: 1,
             hash: 0,
-            repetition_map: CircularBuffer::new(),
+            repetition_map: [0u64; 32],
+            repetition_map_head: 0,
+            king_position: [ChessField { row: 99, col: 99 }; 2],
         }
+    }
+
+    pub fn push_on_repetition_map(&mut self, item: u64) {
+        self.repetition_map[self.repetition_map_head];
+        self.repetition_map_head = (self.repetition_map_head + 1) % 32;
+    }
+
+    pub fn repetition_map_get_back(&self) -> u64 {
+        let i = (self.repetition_map_head - 1) % 32;
+        self.repetition_map[i]
     }
 
     /// Delegates FEN parsing to the `fen` module.
@@ -176,7 +191,15 @@ impl ChessBoard {
         fen::from_fen(fen).map(|mut board| {
             let zobrist = &*ZOBRIST;
             board.hash = zobrist.calculate_hash(&board);
-            board.repetition_map.push_back(board.hash);
+            board.push_on_repetition_map(board.hash);
+            board.king_position[0] = match board.find_king_position_by_scanning(Color::White) {
+                Some(king_position) => king_position,
+                None => ChessField { row: 99, col: 99 },
+            };
+            board.king_position[1] = match board.find_king_position_by_scanning(Color::Black) {
+                Some(king_position) => king_position,
+                None => ChessField { row: 99, col: 99 },
+            };
             board
         })
     }
@@ -411,9 +434,14 @@ impl ChessBoard {
 
     pub fn make_move(&mut self, mv: Move) {
         let piece = self.squares[mv.from.row][mv.from.col];
+        let zobrist = &*ZOBRIST;
+        let mut hash = self.repetition_map_get_back();
+        //undo castling rights in hash
+        hash = zobrist.update_castling(hash, self.castling_rights);
 
         match piece {
             Square::Empty => {
+                hash = zobrist.update_enpassing(hash, self.en_passant);
                 self.en_passant = None;
             }
             Square::Occupied(p) => {
@@ -423,23 +451,34 @@ impl ChessBoard {
                     self.halfmove_clock += 1;
                 }
 
+                hash = zobrist.update_piece(hash, p, mv.from.row, mv.from.col);
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
+
+                hash = zobrist.update_square(hash, self.squares[mv.to.row][mv.to.col], mv.to.row, mv.to.col);
+                hash = zobrist.update_piece(hash, p, mv.to.row, mv.to.col);
                 self.squares[mv.to.row][mv.to.col] = piece;
 
                 if let Some(en_passant) = self.en_passant {
                     if mv.to == en_passant && p.kind == PieceType::Pawn {
                         //Remove piece from en passant
+                        hash =
+                            zobrist.update_square(hash, self.squares[mv.from.row][mv.to.col], mv.from.row, mv.to.col);
                         self.squares[mv.from.row][mv.to.col] = Square::Empty;
                     }
                 }
+                hash = zobrist.update_enpassing(hash, self.en_passant);
                 self.en_passant = None;
 
                 // Check if the move is a castling move and if castling is allowed
                 if p.kind == PieceType::King {
+                    self.king_position[if self.active_color == Color::White { 0 } else { 1 }] = mv.to;
                     if mv.from.col == 4 && mv.to.col == 6 && mv.from.row == mv.to.row {
                         if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
                             let rook_col = 7;
                             self.squares[mv.from.row][5] = self.squares[mv.from.row][rook_col];
+                            hash = zobrist.update_square(hash, self.squares[mv.from.row][5], mv.from.row, 5);
+                            hash =
+                                zobrist.update_square(hash, self.squares[mv.from.row][rook_col], mv.from.row, rook_col);
                             self.squares[mv.from.row][rook_col] = Square::Empty;
                         }
                     } else if mv.from.col == 4 && mv.to.col == 2 && mv.from.row == mv.to.row {
@@ -447,6 +486,9 @@ impl ChessBoard {
                         if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
                             let rook_col = 0;
                             self.squares[mv.from.row][3] = self.squares[mv.from.row][rook_col];
+                            hash = zobrist.update_square(hash, self.squares[mv.from.row][3], mv.from.row, 3);
+                            hash =
+                                zobrist.update_square(hash, self.squares[mv.from.row][rook_col], mv.from.row, rook_col);
                             self.squares[mv.from.row][rook_col] = Square::Empty;
                         }
                     }
@@ -484,10 +526,12 @@ impl ChessBoard {
                         self.en_passant = Some(ChessField::new(5, mv.from.col));
                     } else if mv.promotion.is_some() {
                         // Handle promotion
-                        self.squares[mv.to.row][mv.to.col] = Square::Occupied(Piece {
+                        let promotion_piece = Piece {
                             color: p.color,
                             kind: mv.promotion.unwrap(), // Replace the pawn with the promoted piece
-                        });
+                        };
+                        self.squares[mv.to.row][mv.to.col] = Square::Occupied(promotion_piece);
+                        hash = zobrist.update_piece(hash, promotion_piece, mv.to.row, mv.to.col);
                     }
                 }
             }
@@ -503,9 +547,12 @@ impl ChessBoard {
             self.fullmove_number += 1;
         }
 
-        let zobrist = &*ZOBRIST;
-        self.hash = zobrist.calculate_hash(self);
-        self.repetition_map.push_back(self.hash);
+        hash = zobrist.update_castling(hash, self.castling_rights);
+        hash = zobrist.update_active_side(hash);
+        hash = zobrist.update_enpassing(hash, self.en_passant);
+
+        self.hash = hash;
+        self.push_on_repetition_map(hash);
     }
 
     pub fn is_square_attacked(&self, row: usize, col: usize) -> bool {
@@ -644,6 +691,13 @@ impl ChessBoard {
     }
 
     pub fn find_king_position(&self, color: Color) -> Option<ChessField> {
+        match color {
+            Color::White => Some(self.king_position[0]),
+            Color::Black => Some(self.king_position[1]),
+        }
+    }
+
+    pub fn find_king_position_by_scanning(&self, color: Color) -> Option<ChessField> {
         for row in 0..8 {
             for col in 0..8 {
                 if let Square::Occupied(Piece {
@@ -682,7 +736,7 @@ impl ChessBoard {
                 }
             }
         }
-        legal_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        legal_moves.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         legal_moves.iter().map(|m| m.0).collect()
     }
 
@@ -709,7 +763,7 @@ impl ChessBoard {
             }
         }
 
-        capture_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        capture_moves.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         capture_moves.iter().map(|m| m.0).collect()
     }
 
@@ -774,7 +828,7 @@ impl ChessBoard {
     pub fn is_threefold_repetition(&self) -> bool {
         let mut repetition_count = 0;
 
-        if let Some(&current_hash) = self.repetition_map.back() {
+        if let current_hash = self.repetition_map_get_back() {
             for &stored_hash in self.repetition_map.iter() {
                 if stored_hash == current_hash {
                     repetition_count += 1;
