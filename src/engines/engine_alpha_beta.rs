@@ -16,7 +16,7 @@ const DRAW: i32 = 0;
 
 pub struct AlphaBetaEngine {
     board: ChessBoard,
-    principal_variation: [[Move; MAX_PLY]; MAX_PLY],
+    principal_variation: [([Move; MAX_PLY], usize); MAX_PLY],
     max_depth: usize,
     repetition_map: BTreeMap<u64, u8>,
 }
@@ -25,7 +25,7 @@ impl AlphaBetaEngine {
     pub fn new() -> Self {
         AlphaBetaEngine {
             board: ChessBoard::new(),
-            principal_variation: [[Move::new(99, 99, 99, 99); MAX_PLY]; MAX_PLY],
+            principal_variation: [([Move::new(99, 99, 99, 99); MAX_PLY], 0); MAX_PLY],
             max_depth: 20,
             repetition_map: BTreeMap::new(),
         }
@@ -83,7 +83,7 @@ impl ChessEngine for AlphaBetaEngine {
             } else {
                 break;
             }
-            let pv = self.principal_variation[0][0..(depth + 1) as usize]
+            let pv = self.principal_variation[0].0[0..self.principal_variation[0].1]
                 .iter()
                 .map(|mv| mv.as_algebraic())
                 .collect::<Vec<_>>()
@@ -162,6 +162,7 @@ impl AlphaBetaEngine {
             return None;
         }
         *node_count += 1;
+        self.principal_variation[ply].1 = 0;
 
         let hash = board.hash;
         if let Some(count) = self.repetition_map.get(&hash) {
@@ -239,10 +240,11 @@ impl AlphaBetaEngine {
     }
 
     fn save_principal_variation(&mut self, mv: Move, depth: usize, ply: usize) {
-        self.principal_variation[ply][0] = mv;
-        for i in 0..depth {
-            self.principal_variation[ply][i + 1] = self.principal_variation[ply + 1][i];
+        self.principal_variation[ply].0[0] = mv;
+        for i in 0..self.principal_variation[ply + 1].1 {
+            self.principal_variation[ply].0[i + 1] = self.principal_variation[ply + 1].0[i];
         }
+        self.principal_variation[ply].1 = self.principal_variation[ply + 1].1 + 1;
     }
 
     fn quiescence_search_prunning(
@@ -410,7 +412,7 @@ mod tests {
             );
             println!(
                 "Principal variation: {}",
-                engine.principal_variation[0][0..depth + 1]
+                engine.principal_variation[0].0[0..engine.principal_variation[0].1]
                     .iter()
                     .map(|mv| mv.as_algebraic())
                     .collect::<Vec<_>>()
@@ -432,7 +434,7 @@ mod tests {
             );
             println!(
                 "Principal variation: {}",
-                engine.principal_variation[0][0..depth + 1]
+                engine.principal_variation[0].0[0..engine.principal_variation[0].1]
                     .iter()
                     .map(|mv| mv.as_algebraic())
                     .collect::<Vec<_>>()
