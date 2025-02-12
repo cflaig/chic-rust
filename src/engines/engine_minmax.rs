@@ -82,7 +82,7 @@ const DRAW: i32 = 0;
 
 fn negamax(board: &ChessBoard, depth: i32, node_count: &mut u64, last_capture_move: Option<Move>) -> i32 {
     *node_count += 1;
-    if board.is_threefold_repetition() {
+    if board.is_draw() {
         return 0;
     }
     if depth <= 0 {
