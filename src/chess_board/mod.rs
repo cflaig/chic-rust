@@ -136,6 +136,7 @@ pub struct ChessBoard {
     pub en_passant: Option<ChessField>,
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
+    pub hash: u64,
     pub repetition_map: CircularBuffer<32, u64>,
 }
 const NO_CAPTURE: i32 = 0;
@@ -164,6 +165,7 @@ impl ChessBoard {
             en_passant: None,            // No en passant square by default
             halfmove_clock: 0,           // Halfmove clock starts at 0
             fullmove_number: 1,
+            hash: 0,
             repetition_map: CircularBuffer::new(),
         }
     }
@@ -172,7 +174,8 @@ impl ChessBoard {
     pub fn from_fen(fen: &str) -> Result<Self, String> {
         fen::from_fen(fen).map(|mut board| {
             let zobrist = &*ZOBRIST;
-            board.repetition_map.push_back(zobrist.calculate_hash(&board));
+            board.hash = zobrist.calculate_hash(&board);
+            board.repetition_map.push_back(board.hash);
             board
         })
     }
@@ -413,6 +416,12 @@ impl ChessBoard {
                 self.en_passant = None;
             }
             Square::Occupied(p) => {
+                if p.kind == PieceType::Pawn || matches!(self.squares[mv.to.row][mv.to.col], Square::Occupied(_)) {
+                    self.halfmove_clock = 0;
+                } else {
+                    self.halfmove_clock += 1;
+                }
+
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
                 self.squares[mv.to.row][mv.to.col] = piece;
 
@@ -467,12 +476,6 @@ impl ChessBoard {
                     self.castling_rights[2] = false;
                 }
 
-                if p.kind == PieceType::Pawn || matches!(self.squares[mv.to.row][mv.to.col], Square::Occupied(_)) {
-                    self.halfmove_clock = 0;
-                } else {
-                    self.halfmove_clock += 1;
-                }
-
                 if p.kind == PieceType::Pawn {
                     if p.color == Color::White && mv.from.row == 1 && mv.to.row == 3 {
                         self.en_passant = Some(ChessField::new(2, mv.from.col));
@@ -500,7 +503,8 @@ impl ChessBoard {
         }
 
         let zobrist = &*ZOBRIST;
-        self.repetition_map.push_back(zobrist.calculate_hash(self));
+        self.hash = zobrist.calculate_hash(self);
+        self.repetition_map.push_back(self.hash);
     }
 
     pub fn is_square_attacked(&self, row: usize, col: usize) -> bool {
