@@ -21,8 +21,6 @@ pub(crate) fn run_uci_interface() {
             continue;
         }
 
-        println!("UCI: {}", line);
-
         // Parse UCI commands:
         let tokens: Vec<&str> = line.split_whitespace().collect();
         match tokens[0] {
