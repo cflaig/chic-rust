@@ -1,6 +1,7 @@
 use crate::chess_board::zobrist_hash::ZOBRIST;
 use circular_buffer::CircularBuffer;
 use std::fmt;
+use std::iter::RepeatN;
 
 pub mod fen;
 pub mod zobrist_hash;
@@ -137,7 +138,7 @@ pub struct ChessBoard {
     pub halfmove_clock: u32,
     pub fullmove_number: u32,
     pub hash: u64,
-    pub repetition_map: CircularBuffer<32, u64>,
+    pub king_position: [ChessField; 2],
 }
 const NO_CAPTURE: i32 = 0;
 const CAPTURE: i32 = 10000;
@@ -166,7 +167,7 @@ impl ChessBoard {
             halfmove_clock: 0,           // Halfmove clock starts at 0
             fullmove_number: 1,
             hash: 0,
-            repetition_map: CircularBuffer::new(),
+            king_position: [ChessField { row: 99, col: 99 }; 2],
         }
     }
 
@@ -175,7 +176,14 @@ impl ChessBoard {
         fen::from_fen(fen).map(|mut board| {
             let zobrist = &*ZOBRIST;
             board.hash = zobrist.calculate_hash(&board);
-            board.repetition_map.push_back(board.hash);
+            board.king_position[0] = match board.find_king_position_by_scanning(Color::White) {
+                Some(king_position) => king_position,
+                None => ChessField { row: 99, col: 99 },
+            };
+            board.king_position[1] = match board.find_king_position_by_scanning(Color::Black) {
+                Some(king_position) => king_position,
+                None => ChessField { row: 99, col: 99 },
+            };
             board
         })
     }
@@ -410,9 +418,14 @@ impl ChessBoard {
 
     pub fn make_move(&mut self, mv: Move) {
         let piece = self.squares[mv.from.row][mv.from.col];
+        let zobrist = &*ZOBRIST;
+        let mut hash = self.hash;
+        //undo castling rights in hash
+        hash = zobrist.update_castling(hash, self.castling_rights);
 
         match piece {
             Square::Empty => {
+                hash = zobrist.update_enpassing(hash, self.en_passant);
                 self.en_passant = None;
             }
             Square::Occupied(p) => {
@@ -422,23 +435,34 @@ impl ChessBoard {
                     self.halfmove_clock += 1;
                 }
 
+                hash = zobrist.update_piece(hash, p, mv.from.row, mv.from.col);
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
+
+                hash = zobrist.update_square(hash, self.squares[mv.to.row][mv.to.col], mv.to.row, mv.to.col);
+                hash = zobrist.update_piece(hash, p, mv.to.row, mv.to.col);
                 self.squares[mv.to.row][mv.to.col] = piece;
 
                 if let Some(en_passant) = self.en_passant {
                     if mv.to == en_passant && p.kind == PieceType::Pawn {
                         //Remove piece from en passant
+                        hash =
+                            zobrist.update_square(hash, self.squares[mv.from.row][mv.to.col], mv.from.row, mv.to.col);
                         self.squares[mv.from.row][mv.to.col] = Square::Empty;
                     }
                 }
+                hash = zobrist.update_enpassing(hash, self.en_passant);
                 self.en_passant = None;
 
                 // Check if the move is a castling move and if castling is allowed
                 if p.kind == PieceType::King {
+                    self.king_position[if self.active_color == Color::White { 0 } else { 1 }] = mv.to;
                     if mv.from.col == 4 && mv.to.col == 6 && mv.from.row == mv.to.row {
                         if self.castling_rights[if self.active_color == Color::White { 0 } else { 2 }] {
                             let rook_col = 7;
                             self.squares[mv.from.row][5] = self.squares[mv.from.row][rook_col];
+                            hash = zobrist.update_square(hash, self.squares[mv.from.row][5], mv.from.row, 5);
+                            hash =
+                                zobrist.update_square(hash, self.squares[mv.from.row][rook_col], mv.from.row, rook_col);
                             self.squares[mv.from.row][rook_col] = Square::Empty;
                         }
                     } else if mv.from.col == 4 && mv.to.col == 2 && mv.from.row == mv.to.row {
@@ -446,6 +470,9 @@ impl ChessBoard {
                         if self.castling_rights[if self.active_color == Color::White { 1 } else { 3 }] {
                             let rook_col = 0;
                             self.squares[mv.from.row][3] = self.squares[mv.from.row][rook_col];
+                            hash = zobrist.update_square(hash, self.squares[mv.from.row][3], mv.from.row, 3);
+                            hash =
+                                zobrist.update_square(hash, self.squares[mv.from.row][rook_col], mv.from.row, rook_col);
                             self.squares[mv.from.row][rook_col] = Square::Empty;
                         }
                     }
@@ -483,10 +510,13 @@ impl ChessBoard {
                         self.en_passant = Some(ChessField::new(5, mv.from.col));
                     } else if mv.promotion.is_some() {
                         // Handle promotion
-                        self.squares[mv.to.row][mv.to.col] = Square::Occupied(Piece {
+                        let promotion_piece = Piece {
                             color: p.color,
                             kind: mv.promotion.unwrap(), // Replace the pawn with the promoted piece
-                        });
+                        };
+                        self.squares[mv.to.row][mv.to.col] = Square::Occupied(promotion_piece);
+                        hash = zobrist.update_piece(hash, p, mv.to.row, mv.to.col);
+                        hash = zobrist.update_piece(hash, promotion_piece, mv.to.row, mv.to.col);
                     }
                 }
             }
@@ -502,9 +532,11 @@ impl ChessBoard {
             self.fullmove_number += 1;
         }
 
-        let zobrist = &*ZOBRIST;
-        self.hash = zobrist.calculate_hash(self);
-        self.repetition_map.push_back(self.hash);
+        hash = zobrist.update_castling(hash, self.castling_rights);
+        hash = zobrist.update_active_side(hash);
+        hash = zobrist.update_enpassing(hash, self.en_passant);
+
+        self.hash = hash;
     }
 
     pub fn is_square_attacked(&self, row: usize, col: usize) -> bool {
@@ -643,6 +675,18 @@ impl ChessBoard {
     }
 
     pub fn find_king_position(&self, color: Color) -> Option<ChessField> {
+        let king = match color {
+            Color::White => Some(self.king_position[0]),
+            Color::Black => Some(self.king_position[1]),
+        };
+        if matches!(king, Some(ChessField { row: 99, col: 99 })) {
+        None
+        } else {
+            king
+        }
+    }
+
+    pub fn find_king_position_by_scanning(&self, color: Color) -> Option<ChessField> {
         for row in 0..8 {
             for col in 0..8 {
                 if let Square::Occupied(Piece {
@@ -681,7 +725,7 @@ impl ChessBoard {
                 }
             }
         }
-        legal_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        legal_moves.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         legal_moves.iter().map(|m| m.0).collect()
     }
 
@@ -708,7 +752,7 @@ impl ChessBoard {
             }
         }
 
-        capture_moves.sort_by(|a, b| b.1.cmp(&a.1));
+        capture_moves.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         capture_moves.iter().map(|m| m.0).collect()
     }
 
@@ -763,28 +807,11 @@ impl ChessBoard {
 
     #[allow(dead_code)]
     pub fn is_draw(&self) -> bool {
-        self.is_draw_by_fifty_move_rule() || self.is_threefold_repetition()
+        self.is_draw_by_fifty_move_rule()
     }
     #[allow(dead_code)]
     pub fn is_draw_by_fifty_move_rule(&self) -> bool {
         self.halfmove_clock >= 100
-    }
-
-    pub fn is_threefold_repetition(&self) -> bool {
-        let mut repetition_count = 0;
-
-        if let Some(&current_hash) = self.repetition_map.back() {
-            for &stored_hash in self.repetition_map.iter() {
-                if stored_hash == current_hash {
-                    repetition_count += 1;
-                }
-                if repetition_count >= 3 {
-                    return true;
-                }
-            }
-        }
-
-        false
     }
 
     pub(crate) fn render_to_string(&self) -> String {
@@ -1471,6 +1498,66 @@ mod tests {
     }
 
     #[test]
+    fn test_hashing() {
+        let mut board = ChessBoard::from_fen("1k6/q6P/8/2n5/5p2/8/6P1/R3K2R w KQ - 0 1").unwrap();
+        let zobrist =
+        board.make_move(Move::from_algebraic("a1a7"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+        board.make_move(Move::from_algebraic("c5e6"));
+        board.make_move(Move::from_algebraic("e1g1"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+        board.make_move(Move::from_algebraic("e6c5"));
+        board.make_move(Move::from_algebraic("g2g4"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+        board.make_move(Move::from_algebraic("g4g3"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+        board.make_move(Move::from_algebraic("g4g3b"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+    }
+
+    #[test]
+    fn test_hashing2() {
+        let mut board = ChessBoard::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1").unwrap();
+        let zobrist =
+            board.make_move(Move::from_algebraic("f1f2"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+        board.make_move(Move::from_algebraic("b2a1q"));
+        assert_eq!(board.hash, ZOBRIST.calculate_hash(&board));
+    }
+
+    #[test]
+    fn test_hashing_recursive() {
+        let mut board = ChessBoard::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1").unwrap();
+        let mut mvs = vec![];
+        check_hash_recursive(&board, 5, &mut mvs);
+    }
+
+    pub fn check_hash_recursive(board: &ChessBoard, depth: u8, mvs: &mut Vec<Move>)  {
+
+        if depth == 0 {
+            return;
+        }
+
+        let moves = board.generate_legal_moves();
+        if moves.is_empty() {
+            return;
+        }
+        for mv in moves {
+            let mut new_board = board.clone();
+            new_board.make_move(mv);
+            mvs.push(mv);
+            let board_hash = ZOBRIST.calculate_hash(&new_board);
+
+            if new_board.hash != board_hash {
+                println!("{:?}", mvs.iter().map(|&m| m.as_algebraic()).collect::<Vec<_>>())
+            }
+            assert_eq!(new_board.hash, board_hash);
+            check_hash_recursive(&new_board, depth - 1, mvs);
+            mvs.pop();
+        }
+    }
+
+    #[test]
     fn test_three_fold_repetition() {
         let mut board =
             ChessBoard::from_fen("1rb2rk1/p4ppp/1p1qp1n1/3n2N1/2pP4/2P3P1/PPQ2PBP/R1B1R1K1 w - - 4 17").unwrap();
@@ -1479,12 +1566,12 @@ mod tests {
         board.make_move(Move::from_algebraic("g8h8"));
         board.make_move(Move::from_algebraic("e2e1"));
         board.make_move(Move::from_algebraic("h8g8"));
-        assert_eq!(board.is_threefold_repetition(), false);
+        //assert_eq!(board.is_threefold_repetition(), false);
         board.make_move(Move::from_algebraic("e1e2"));
         board.make_move(Move::from_algebraic("g8h8"));
         board.make_move(Move::from_algebraic("e2e1"));
         board.make_move(Move::from_algebraic("h8g8"));
-        assert_eq!(board.is_threefold_repetition(), true);
+        //assert_eq!(board.is_threefold_repetition(), true);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::{ChessBoard, Color, PieceType, Square};
+use super::{ChessBoard, ChessField, Color, Piece, PieceType, Square};
 use lazy_static::lazy_static;
 use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
@@ -51,6 +51,42 @@ impl ZobristHash {
         }
     }
 
+    pub fn update_square(&self, hash: u64, square: Square, row: usize, col: usize) -> u64 {
+        if let Square::Occupied(piece) = square {
+            self.update_piece(hash, piece, row, col)
+        } else {
+            hash
+        }
+    }
+
+    pub fn update_piece(&self, hash: u64, piece: Piece, row: usize, col: usize) -> u64 {
+        let square_index = row * BOARD_SIZE + col;
+        let color_index = Self::get_color_index(piece);
+        let piece_index = Self::get_piece_index(piece);
+        hash ^ self.piece_keys[color_index][piece_index][square_index]
+    }
+
+    pub fn update_active_side(&self, hash: u64) -> u64 {
+        hash ^ self.side_to_move_key
+    }
+
+    pub fn update_castling(&self, mut hash: u64, castling_rights: [bool; 4]) -> u64 {
+        for (i, castling) in castling_rights.iter().enumerate() {
+            if *castling {
+                hash ^= self.castling_keys[i];
+            }
+        }
+        hash
+    }
+
+    pub fn update_enpassing(&self, hash: u64, en_passant_field: Option<ChessField>) -> u64 {
+        if let Some(en_passant) = en_passant_field {
+            hash ^ self.en_passant_keys[en_passant.col]
+        } else {
+            hash
+        }
+    }
+
     pub fn calculate_hash(&self, board: &ChessBoard) -> u64 {
         let mut hash = 0;
 
@@ -58,18 +94,8 @@ impl ZobristHash {
         for row in 0..BOARD_SIZE {
             for col in 0..BOARD_SIZE {
                 if let Square::Occupied(piece) = board.squares[row][col] {
-                    let color_index = match piece.color {
-                        Color::White => 0,
-                        Color::Black => 1,
-                    };
-                    let piece_index = match piece.kind {
-                        PieceType::Pawn => 0,
-                        PieceType::Knight => 1,
-                        PieceType::Bishop => 2,
-                        PieceType::Rook => 3,
-                        PieceType::Queen => 4,
-                        PieceType::King => 5,
-                    };
+                    let color_index = Self::get_color_index(piece);
+                    let piece_index = Self::get_piece_index(piece);
                     let square_index = row * BOARD_SIZE + col;
                     hash ^= self.piece_keys[color_index][piece_index][square_index];
                 }
@@ -94,6 +120,26 @@ impl ZobristHash {
         }
 
         hash
+    }
+
+    fn get_piece_index(piece: Piece) -> usize {
+        let piece_index = match piece.kind {
+            PieceType::Pawn => 0,
+            PieceType::Knight => 1,
+            PieceType::Bishop => 2,
+            PieceType::Rook => 3,
+            PieceType::Queen => 4,
+            PieceType::King => 5,
+        };
+        piece_index
+    }
+
+    fn get_color_index(piece: Piece) -> usize {
+        let color_index = match piece.color {
+            Color::White => 0,
+            Color::Black => 1,
+        };
+        color_index
     }
 }
 

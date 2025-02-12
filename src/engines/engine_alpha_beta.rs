@@ -153,11 +153,17 @@ impl AlphaBetaEngine {
             }
             let mut new_board = self.board.clone();
             new_board.make_move(mv);
+            let hash = new_board.hash;
+            self.insert_hash(hash);
 
-            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -alpha, 1, deadline, &mut node_count) {
-                None => return None,
+            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -MIN_EVALUATION, 1, deadline, &mut node_count) {
+                None => {
+                    self.remove_hash(&hash);
+                    return None;
+                }
                 Some(score) => -score,
             };
+            self.remove_hash(&hash);
 
             if score > best_score {
                 alpha = score;
@@ -187,18 +193,14 @@ impl AlphaBetaEngine {
         *node_count += 1;
         self.principal_variation[ply].1 = 0;
 
-        let hash = board.hash;
-        if let Some(count) = self.repetition_map.get(&hash) {
+        if let Some(count) = self.repetition_map.get(&board.hash) {
             if *count == 2 {
                 return Some(0);
             }
         }
-        self.insert_hash(hash);
 
         if depth <= 0 || ply > MAX_PLY {
             *node_count -= 1;
-            self.remove_hash(&hash);
-
             return AlphaBetaEngine::quiescence_search_prunning(
                 board,
                 node_count,
@@ -216,10 +218,8 @@ impl AlphaBetaEngine {
         if moves.is_empty() {
             // Handle checkmate or stalemate
             if board.is_checkmate() {
-                self.remove_hash(&hash);
                 return Some(LOSS - depth);
             } else if board.is_stalemate() {
-                self.remove_hash(&hash);
                 return Some(DRAW);
             }
         }
@@ -227,6 +227,8 @@ impl AlphaBetaEngine {
         for mv in moves {
             let mut new_board = board.clone();
             new_board.make_move(mv);
+            let hash = new_board.hash;
+            self.insert_hash(hash);
             let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, deadline, node_count) {
                 None => {
                     self.remove_hash(&hash);
@@ -234,6 +236,7 @@ impl AlphaBetaEngine {
                 }
                 Some(score) => -score,
             };
+            self.remove_hash(&hash);
             if score > max_score {
                 max_score = score;
                 if score > alpha {
@@ -247,7 +250,6 @@ impl AlphaBetaEngine {
             }
         }
 
-        self.remove_hash(&hash);
         Some(max_score)
     }
 
