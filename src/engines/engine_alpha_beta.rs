@@ -156,7 +156,7 @@ impl AlphaBetaEngine {
             let hash = new_board.hash;
             self.insert_hash(hash);
 
-            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -MIN_EVALUATION, 1, deadline, &mut node_count) {
+            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -alpha, 1, deadline, &mut node_count) {
                 None => {
                     self.remove_hash(&hash);
                     return None;
@@ -338,6 +338,18 @@ impl AlphaBetaEngine {
 ];
 
     #[rustfmt::skip]
+    const PAWN_SQUARE_TABLE_ENDGAME: [[i32; 8]; 8] = [
+    [  0,   0,   0,   0,   0,   0,   0,   0],
+    [500, 500, 500, 500, 500, 500, 500, 500],
+    [400, 400, 400, 400, 400, 400, 400, 400],
+    [300, 300, 300, 300, 300, 300, 300, 300],
+    [200, 200, 200, 200, 200, 200, 200, 200],
+    [100, 100, 100, 100, 100, 100, 100, 100],
+    [  0,   0,   0,-250,-250,   0,   0,   0],
+    [  0,   0,   0,   0,   0,   0,   0,   0],
+];
+
+    #[rustfmt::skip]
     const KNIGHT_SQUARE_TABLE: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
     [-100,   0,   0,   0,   0,   0,   0,-100],
@@ -373,9 +385,23 @@ impl AlphaBetaEngine {
     [ 300,  350,  400,  -50,    0,  -50,  500,  300],
 ];
 
+    #[rustfmt::skip]
+    const KING_SQUARE_TABLE_ENDGAME: [[i32; 8]; 8] = [
+    [-200,-100,-100,-100,-100,-100,-100,-200],
+    [-100,   0,   0,   0,   0,   0,   0,-100],
+    [-100,   0,  50,  50,  50,  50,   0,-100],
+    [-100,   0,  50, 100, 150,  50,   0,-100],
+    [-100,   0,  50, 100, 100,  50,   0,-100],
+    [-100,   0,  50,  50,  50,  50,   0,-100],
+    [-100,   0,   0,   0,   0,   0,   0,-100],
+    [-200,-100,-100,-100,-100,-100,-100,-200],
+    ];
+
     /// Evaluates the board state and assigns a score based on material balance.
     fn evaluate_board(board: &ChessBoard) -> i32 {
         let mut evaluation = 0;
+        let mut black_material = 0;
+        let mut white_material = 0;
 
         for row in 0..8 {
             for col in 0..8 {
@@ -390,24 +416,9 @@ impl AlphaBetaEngine {
                             PieceType::King => WIN, // if one king is on the board, it is won
                         };
 
-                        //Check position value
-                        let psq_row = match piece.color {
-                            Color::White => 7 - row,
-                            Color::Black => row,
-                        };
-
-                        let possition_value = match piece.kind {
-                            PieceType::King => AlphaBetaEngine::KING_SQUARE_TABLE[psq_row][col],
-                            PieceType::Pawn => AlphaBetaEngine::PAWN_SQUARE_TABLE[psq_row][col],
-                            PieceType::Knight => AlphaBetaEngine::KNIGHT_SQUARE_TABLE[psq_row][col],
-                            PieceType::Bishop => AlphaBetaEngine::BISHOP_SQUARE_TABLE[psq_row][col],
-                            _ => 0,
-                        };
-
-                        let piece_evaluation = piece_value + possition_value;
-                        evaluation += match piece.color {
-                            Color::White => piece_evaluation,
-                            Color::Black => -piece_evaluation,
+                       match piece.color {
+                            Color::White => white_material += piece_value,
+                            Color::Black => black_material += piece_value,
                         };
                     }
 
@@ -416,7 +427,46 @@ impl AlphaBetaEngine {
             }
         }
 
-        evaluation
+        let use_endgame = black_material - WIN < 17_000 || white_material - WIN < 17_000;
+
+        for row in 0..8 {
+            for col in 0..8 {
+                match board.squares[row][col] {
+                    Square::Occupied(piece) => {
+                        //Check position value
+                        let psq_row = match piece.color {
+                            Color::White => 7 - row,
+                            Color::Black => row,
+                        };
+
+                        let possition_value = match piece.kind {
+                            PieceType::King => if use_endgame {
+                                AlphaBetaEngine::KING_SQUARE_TABLE_ENDGAME[psq_row][col]
+                            } else {
+                                AlphaBetaEngine::KING_SQUARE_TABLE[psq_row][col]
+                            },
+                            PieceType::Pawn => if use_endgame {
+                                AlphaBetaEngine::PAWN_SQUARE_TABLE_ENDGAME[psq_row][col]
+                            } else {
+                                AlphaBetaEngine::PAWN_SQUARE_TABLE[psq_row][col]
+                            },
+                            PieceType::Knight => AlphaBetaEngine::KNIGHT_SQUARE_TABLE[psq_row][col],
+                            PieceType::Bishop => AlphaBetaEngine::BISHOP_SQUARE_TABLE[psq_row][col],
+                            _ => 0,
+                        };
+
+                        evaluation += match piece.color {
+                            Color::White => possition_value,
+                            Color::Black => -possition_value,
+                        };
+                    }
+
+                    Square::Empty => {}
+                }
+            }
+        }
+
+        evaluation + white_material - black_material
     }
 }
 
