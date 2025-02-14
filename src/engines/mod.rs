@@ -1,4 +1,6 @@
 use crate::chess_board::{Color, Move};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub mod engine_alpha_beta;
@@ -18,4 +20,5 @@ pub trait ChessEngine {
         info_callback: InfoCallback,
     ) -> Option<(Move, i32, u64, i32)>;
     fn get_active_player(&self) -> Color;
+    fn get_abort_channel(&self) -> Arc<AtomicBool>;
 }

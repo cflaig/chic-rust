@@ -1,6 +1,9 @@
 use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
 use crate::engines::{ChessEngine, InfoCallback};
 use rand::prelude::SliceRandom;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -17,6 +20,7 @@ pub struct AlphaBetaEngine {
     board: ChessBoard,
     principal_variation: [([Move; MAX_PLY], usize); MAX_PLY],
     max_depth: usize,
+    aborted: Arc<AtomicBool>,
 }
 
 impl AlphaBetaEngine {
@@ -25,6 +29,7 @@ impl AlphaBetaEngine {
             board: ChessBoard::new(),
             principal_variation: [([Move::new(99, 99, 99, 99); MAX_PLY], 0); MAX_PLY],
             max_depth: 20,
+            aborted: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -58,6 +63,8 @@ impl ChessEngine for AlphaBetaEngine {
         let mut best_move = None;
         let mut total_node_count = 0;
 
+        self.aborted.store(false, Relaxed);
+
         let start_time = Instant::now();
         let mut depth = 1;
 
@@ -88,6 +95,10 @@ impl ChessEngine for AlphaBetaEngine {
     fn get_active_player(&self) -> Color {
         self.board.active_color
     }
+
+    fn get_abort_channel(&self) -> Arc<AtomicBool> {
+        self.aborted.clone()
+    }
 }
 
 impl AlphaBetaEngine {
@@ -115,7 +126,7 @@ impl AlphaBetaEngine {
         let mut alpha = MIN_EVALUATION;
 
         for mv in moves {
-            if Instant::now() > deadline {
+            if Instant::now() > deadline || self.aborted.load(Relaxed) {
                 return None;
             }
             let mut new_board = self.board.clone();
@@ -156,7 +167,7 @@ impl AlphaBetaEngine {
         deadline: Instant,
         node_count: &mut u64,
     ) -> Option<i32> {
-        if Instant::now() > deadline {
+        if Instant::now() > deadline || self.aborted.load(Relaxed) {
             return None;
         }
         *node_count += 1;
@@ -169,7 +180,14 @@ impl AlphaBetaEngine {
 
         if depth <= 0 || ply > MAX_PLY {
             *node_count -= 1;
-            return AlphaBetaEngine::quiescence_search_prunning(board, node_count, alpha, beta, deadline);
+            return AlphaBetaEngine::quiescence_search_prunning(
+                board,
+                node_count,
+                alpha,
+                beta,
+                deadline,
+                &self.aborted,
+            );
         }
 
         let mut alpha = alpha;
@@ -224,8 +242,9 @@ impl AlphaBetaEngine {
         mut alpha: i32,
         beta: i32,
         deadline: Instant,
+        aborted: &Arc<AtomicBool>,
     ) -> Option<i32> {
-        if Instant::now() > deadline {
+        if Instant::now() > deadline || aborted.load(Relaxed) {
             return None;
         }
         *node_count += 1;
@@ -246,11 +265,12 @@ impl AlphaBetaEngine {
         for mv in moves {
             let mut new_board = board.clone();
             new_board.make_move(mv);
-            let score =
-                match AlphaBetaEngine::quiescence_search_prunning(&new_board, node_count, -beta, -alpha, deadline) {
-                    None => return None,
-                    Some(score) => -score,
-                };
+            let score = match AlphaBetaEngine::quiescence_search_prunning(
+                &new_board, node_count, -beta, -alpha, deadline, aborted,
+            ) {
+                None => return None,
+                Some(score) => -score,
+            };
             max_score = max_score.max(score);
             alpha = alpha.max(score);
             if alpha >= beta {

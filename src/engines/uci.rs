@@ -5,11 +5,17 @@ use crate::engines::ChessEngine;
 use std::io::BufRead;
 use std::io::Write;
 use std::io::{stdin, stdout};
-use std::result;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{result, thread};
 
 pub(crate) fn run_uci_interface() {
-    let mut engine = AlphaBetaEngine::new();
+    let engine = Arc::new(Mutex::new(AlphaBetaEngine::new()));
+    let abort = engine.lock().unwrap().get_abort_channel();
+
+    let name = engine.lock().unwrap().name().to_string();
+    let author = engine.lock().unwrap().author().to_string();
 
     for line in stdin().lock().lines() {
         let line = match line {
@@ -25,8 +31,8 @@ pub(crate) fn run_uci_interface() {
         let tokens: Vec<&str> = line.split_whitespace().collect();
         match tokens[0] {
             "uci" => {
-                println!("id name {}", engine.name());
-                println!("id author {}", engine.author());
+                println!("id name {}", name);
+                println!("id author {}", author);
                 println!("uciok");
                 stdout().flush().unwrap();
             }
@@ -39,6 +45,7 @@ pub(crate) fn run_uci_interface() {
             }
             "position" => match parse_position(tokens) {
                 Ok((start_fen, moves)) => {
+                    let mut engine = engine.lock().unwrap();
                     engine.set_position(start_fen.as_str()).unwrap();
                     for mv in moves {
                         engine.make_move(mv.as_str()).unwrap();
@@ -49,16 +56,16 @@ pub(crate) fn run_uci_interface() {
                 }
             },
             "go" => {
-                let search_time = parse_go_command(&tokens[1..], engine.get_active_player());
-                let (best_move, score, node_count, depth) =
-                    engine.find_best_move_iterative(search_time, uci_info_callback).unwrap();
-
-                println!("bestmove {}", best_move.as_algebraic());
-                stdout().flush().unwrap();
+                let search_time = parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
+                let engine_clone = Arc::clone(&engine);
+                let handle = thread::spawn(move || {
+                    let mut engine = engine_clone.lock().unwrap();
+                    let (best_move, _, _, _) = engine.find_best_move_iterative(search_time, uci_info_callback).unwrap();
+                    println!("bestmove {}", (best_move.as_algebraic()));
+                });
             }
             "stop" => {
-                // If the engine was searching asynchronously, you’d stop and return best move
-                // For a simple synchronous example, there’s nothing special to do here
+                abort.store(true, Relaxed);
             }
             "quit" => {
                 return;
