@@ -99,6 +99,10 @@ impl ChessEngine for AlphaBetaEngine {
     fn get_abort_channel(&self) -> Arc<AtomicBool> {
         self.aborted.clone()
     }
+
+    fn render_board(&self) {
+        println!("{}", self.board.render_to_string());
+    }
 }
 
 impl AlphaBetaEngine {

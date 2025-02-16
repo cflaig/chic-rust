@@ -138,7 +138,6 @@ pub struct ChessBoard {
     pub fullmove_number: u32,
     pub repetition_map: CircularBuffer<32, u64>,
 }
-
 const NO_CAPTURE: i32 = 0;
 const CAPTURE: i32 = 10000;
 const CAPTURE_BASE: i32 = CAPTURE + 10;
@@ -643,9 +642,9 @@ impl ChessBoard {
         for row in 0..8 {
             for col in 0..8 {
                 if let Square::Occupied(Piece {
-                    color: piece_color,
-                    kind: PieceType::King,
-                }) = self.squares[row][col]
+                                            color: piece_color,
+                                            kind: PieceType::King,
+                                        }) = self.squares[row][col]
                 {
                     if piece_color == color {
                         return Some(ChessField::new(row, col));
@@ -782,6 +781,41 @@ impl ChessBoard {
         }
 
         false
+    }
+
+    pub(crate) fn render_to_string(&self) -> String {
+        let mut board_representation = String::new();
+        board_representation.push_str("    a   b   c   d   e   f   g   h  \n");
+        board_representation.push_str("  ┌───┬───┬───┬───┬───┬───┬───┬───┐\n");
+
+        for row in (0..8).rev() { // Render rows from top (8) to bottom (1)
+            board_representation.push_str(&format!("{} │", row + 1)); // Row number on the left
+            for col in 0..8 {
+                let square = match &self.squares[row][col] {
+                    Square::Empty => ' ',
+                    Square::Occupied(piece) => match piece.kind {
+                        PieceType::Pawn => if piece.color == Color::White { 'P' } else { 'p' },
+                        PieceType::Knight => if piece.color == Color::White { 'N' } else { 'n' },
+                        PieceType::Bishop => if piece.color == Color::White { 'B' } else { 'b' },
+                        PieceType::Rook => if piece.color == Color::White { 'R' } else { 'r' },
+                        PieceType::Queen => if piece.color == Color::White { 'Q' } else { 'q' },
+                        PieceType::King => if piece.color == Color::White { 'K' } else { 'k' },
+                    },
+                };
+                board_representation.push_str(&format!(" {} │", square));
+            }
+            board_representation.push_str(&format!(" {}\n", row + 1));
+
+            // Add horizontal grid border between rows
+            if row > 0 {
+                board_representation.push_str("  ├───┼───┼───┼───┼───┼───┼───┼───┤\n");
+            }
+        }
+
+        board_representation.push_str("  └───┴───┴───┴───┴───┴───┴───┴───┘\n");
+        board_representation.push_str("    a   b   c   d   e   f   g   h  \n");
+
+        board_representation
     }
 }
 

@@ -21,4 +21,5 @@ pub trait ChessEngine {
     ) -> Option<(Move, i32, u64, i32)>;
     fn get_active_player(&self) -> Color;
     fn get_abort_channel(&self) -> Arc<AtomicBool>;
+    fn render_board(&self);
 }

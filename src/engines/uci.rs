@@ -70,6 +70,10 @@ pub(crate) fn run_uci_interface() {
             "quit" => {
                 return;
             }
+            "d" => {
+                let engine = engine.lock().unwrap();
+                engine.render_board();
+            }
             _ => {
                 // Ignore or handle custom commands
             }
