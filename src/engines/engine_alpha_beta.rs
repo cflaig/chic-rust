@@ -21,6 +21,7 @@ pub struct AlphaBetaEngine {
     principal_variation: [([Move; MAX_PLY], usize); MAX_PLY],
     max_depth: usize,
     aborted: Arc<AtomicBool>,
+    last_pvs: Vec<Move>,
 }
 
 impl AlphaBetaEngine {
@@ -30,6 +31,7 @@ impl AlphaBetaEngine {
             principal_variation: [([Move::new(99, 99, 99, 99); MAX_PLY], 0); MAX_PLY],
             max_depth: 20,
             aborted: Arc::new(AtomicBool::new(false)),
+            last_pvs: Vec::new(),
         }
     }
 
@@ -59,7 +61,7 @@ impl ChessEngine for AlphaBetaEngine {
         &mut self,
         time_limit: Duration,
         info_callback: InfoCallback,
-    ) -> Option<(Move, i32, u64, i32)> {
+    ) -> Option<(Vec<Move>, i32, u64, i32)> {
         let mut best_move = None;
         let mut total_node_count = 0;
 
@@ -75,19 +77,25 @@ impl ChessEngine for AlphaBetaEngine {
             if let Some((current_move, current_score, node_count)) =
                 self.find_best_move_with_timeout(depth, false, remaining_time)
             {
-                best_move = Some((current_move, current_score, total_node_count + node_count, depth));
+                best_move = Some((
+                    self.principal_variation[0].0[0..self.principal_variation[0].1].to_vec(),
+                    current_score,
+                    total_node_count + node_count,
+                    depth,
+                ));
                 total_node_count += node_count;
+                let pv = self.principal_variation[0].0[0..self.principal_variation[0].1]
+                    .iter()
+                    .map(|mv| mv.as_algebraic())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                info_callback(depth, current_score, total_node_count, start_time.elapsed(), pv);
+                self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1].iter().rev().map(|c|c.clone()).collect();
+
+                depth += 1; // Increase the depth for the next iteration
             } else {
                 break;
             }
-            let pv = self.principal_variation[0].0[0..self.principal_variation[0].1]
-                .iter()
-                .map(|mv| mv.as_algebraic())
-                .collect::<Vec<_>>()
-                .join(" ");
-            info_callback(depth, best_move.unwrap().1, total_node_count, start_time.elapsed(), pv);
-
-            depth += 1; // Increase the depth for the next iteration
         }
 
         best_move
@@ -122,13 +130,13 @@ impl AlphaBetaEngine {
 
         let deadline = Instant::now() + remaining_time;
 
+
         let mut moves = self.board.generate_legal_moves();
         if random {
             moves.shuffle(&mut rand::thread_rng());
         }
 
         let mut alpha = MIN_EVALUATION;
-
         for mv in moves {
             if Instant::now() > deadline || self.aborted.load(Relaxed) {
                 return None;

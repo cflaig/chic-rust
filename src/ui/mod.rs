@@ -231,13 +231,13 @@ fn make_engine_move(state: &Rc<State>) {
         ) {
             println!(
                 "Best move: {} with score: {} nodes: {} depth: {}",
-                best_move.as_algebraic(),
+                best_move[0].as_algebraic(),
                 score,
                 node_count,
                 depth,
             );
             let handle = ui_weak.clone();
-            let mv = best_move.as_algebraic();
+            let mv = best_move[0].as_algebraic();
             // now forward the data to the main thread using invoke_from_event_loop
             let _ = slint::invoke_from_event_loop(move || handle.unwrap().invoke_make_move(SharedString::from(mv)));
         } else {

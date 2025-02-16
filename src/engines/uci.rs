@@ -7,15 +7,21 @@ use std::io::Write;
 use std::io::{stdin, stdout};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{result, thread};
 
+const MAX_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 10);
+
 pub(crate) fn run_uci_interface() {
-    let engine = Arc::new(Mutex::new(AlphaBetaEngine::new()));
-    let abort = engine.lock().unwrap().get_abort_channel();
+    let mut engine = Arc::new(Mutex::new(AlphaBetaEngine::new()));
+    let mut abort = engine.lock().unwrap().get_abort_channel();
 
     let name = engine.lock().unwrap().name().to_string();
     let author = engine.lock().unwrap().author().to_string();
+    let mut search_time_after_pondering = Duration::from_millis(5000);
+
+    let mut handle: Option<JoinHandle<()>> = None;
 
     for line in stdin().lock().lines() {
         let line = match line {
@@ -41,7 +47,8 @@ pub(crate) fn run_uci_interface() {
                 stdout().flush().unwrap();
             }
             "ucinewgame" => {
-                //current_board_state.clear();
+                engine = Arc::new(Mutex::new(AlphaBetaEngine::new()));
+                abort = engine.lock().unwrap().get_abort_channel();
             }
             "position" => match parse_position(tokens) {
                 Ok((start_fen, moves)) => {
@@ -56,13 +63,64 @@ pub(crate) fn run_uci_interface() {
                 }
             },
             "go" => {
-                let search_time = parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
+                let mut search_time = parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
+                let (depth, nodes) = parse_depth_and_nodes(&tokens[1..]);
+                if tokens.len() > 1 {
+                    match tokens[1] {
+                        "infinite" => {
+                            search_time = MAX_DURATION;
+                        }
+                        "ponder" => {
+                            search_time_after_pondering =
+                                parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
+                            search_time = MAX_DURATION;
+                        }
+                        _ => {
+                            search_time = parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
+                        }
+                    };
+                }
+
+                abort.store(true, Relaxed);
+                if let Some(h) = handle.take() {
+                    h.join().unwrap();
+                }
                 let engine_clone = Arc::clone(&engine);
-                let handle = thread::spawn(move || {
+                handle = Some(thread::spawn(move || {
                     let mut engine = engine_clone.lock().unwrap();
                     let (best_move, _, _, _) = engine.find_best_move_iterative(search_time, uci_info_callback).unwrap();
-                    println!("bestmove {}", (best_move.as_algebraic()));
-                });
+                    if best_move.len() > 1 {
+                        println!(
+                            "bestmove {} ponder {}",
+                            best_move[0].as_algebraic(),
+                            best_move[1].as_algebraic()
+                        );
+                    } else {
+                        println!("bestmove {}", best_move[0].as_algebraic());
+                    }
+                }));
+            }
+            "ponderhit" => {
+                abort.store(true, Relaxed);
+                if let Some(h) = handle.take() {
+                    h.join().unwrap();
+                }
+                let engine_clone = Arc::clone(&engine);
+                handle = Some(thread::spawn(move || {
+                    let mut engine = engine_clone.lock().unwrap();
+                    let (best_move, _, _, _) = engine
+                        .find_best_move_iterative(search_time_after_pondering, uci_info_callback)
+                        .unwrap();
+                    if best_move.len() > 1 {
+                        println!(
+                            "bestmove {} ponder {}",
+                            best_move[0].as_algebraic(),
+                            best_move[1].as_algebraic()
+                        );
+                    } else {
+                        println!("bestmove {}", best_move[0].as_algebraic());
+                    }
+                }));
             }
             "stop" => {
                 abort.store(true, Relaxed);
@@ -74,11 +132,34 @@ pub(crate) fn run_uci_interface() {
                 let engine = engine.lock().unwrap();
                 engine.render_board();
             }
+
             _ => {
-                // Ignore or handle custom commands
+                println!("Unknown command: {}", line);
             }
         }
     }
+}
+
+fn parse_depth_and_nodes(tokens: &[&str]) -> (i32, i64) {
+    let mut i = 0;
+    let mut depth = 99;
+    let mut nodes = i64::MAX;
+    while i < tokens.len() {
+        match tokens[i] {
+            "depth" => {
+                depth = tokens[i + 1].parse().unwrap();
+                i += 2;
+            }
+            "nodes" => {
+                nodes = tokens[i + 1].parse().unwrap();
+                i += 2;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    (depth, nodes)
 }
 
 fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration, pv: String) {
