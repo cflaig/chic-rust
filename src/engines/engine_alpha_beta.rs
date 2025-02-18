@@ -166,6 +166,7 @@ impl AlphaBetaEngine {
             self.insert_hash(hash);
 
             let score = match self.negamax(&new_board, depth - 1, MIN_EVALUATION, -alpha, 1, is_principal_variation, deadline, &mut node_count) {
+
                 None => {
                     self.remove_hash(&hash);
                     return None;
