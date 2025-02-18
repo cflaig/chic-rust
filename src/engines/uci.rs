@@ -162,7 +162,7 @@ fn parse_depth_and_nodes(tokens: &[&str]) -> (i32, i64) {
     (depth, nodes)
 }
 
-fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration, pv: String) {
+fn uci_info_callback(depth: usize, seldepth: usize, score: i32, nodes: u64, elapsed: Duration, pv: String) {
     let time_ms = elapsed.as_millis();
     let nps = if elapsed.as_secs_f64() > 0.0 {
         (nodes as f64 / elapsed.as_secs_f64()) as u64
@@ -171,8 +171,9 @@ fn uci_info_callback(depth: i32, score: i32, nodes: u64, elapsed: Duration, pv: 
     };
 
     println!(
-        "info depth {} score cp {} time {} nodes {} nps {} pv {}",
+        "info depth {} seldepth {} score cp {} time {} nodes {} nps {} pv {}",
         depth,
+        seldepth,
         score / 10,
         time_ms,
         nodes,

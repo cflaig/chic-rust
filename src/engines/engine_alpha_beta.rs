@@ -21,6 +21,7 @@ pub struct AlphaBetaEngine {
     board: ChessBoard,
     principal_variation: [([Move; MAX_PLY], usize); MAX_PLY],
     max_depth: usize,
+    current_max_depth: usize,
     aborted: Arc<AtomicBool>,
     last_pvs: Vec<Move>,
     repetition_map: BTreeMap<u64, u8>,
@@ -32,6 +33,7 @@ impl AlphaBetaEngine {
             board: ChessBoard::new(),
             principal_variation: [([Move::new(99, 99, 99, 99); MAX_PLY], 0); MAX_PLY],
             max_depth: 20,
+            current_max_depth: 0,
             aborted: Arc::new(AtomicBool::new(false)),
             last_pvs: Vec::new(),
             repetition_map: BTreeMap::new(),
@@ -82,16 +84,17 @@ impl ChessEngine for AlphaBetaEngine {
 
         while start_time.elapsed() < time_limit {
             let remaining_time = time_limit - start_time.elapsed();
+            self.current_max_depth = depth;
 
             // Call the existing find_best_move function for the current depth.
             if let Some((current_move, current_score, node_count)) =
-                self.find_best_move_with_timeout(depth, false, remaining_time)
+                self.find_best_move_with_timeout(depth as i32, false, remaining_time)
             {
                 best_move = Some((
                     self.principal_variation[0].0[0..self.principal_variation[0].1].to_vec(),
                     current_score,
                     total_node_count + node_count,
-                    depth,
+                    depth as i32,
                 ));
                 total_node_count += node_count;
                 let pv = self.principal_variation[0].0[0..self.principal_variation[0].1]
@@ -99,7 +102,7 @@ impl ChessEngine for AlphaBetaEngine {
                     .map(|mv| mv.as_algebraic())
                     .collect::<Vec<_>>()
                     .join(" ");
-                info_callback(depth, current_score, total_node_count, start_time.elapsed(), pv);
+                info_callback(depth, self.current_max_depth, current_score, total_node_count, start_time.elapsed(), pv);
                 self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1].iter().rev().map(|c|c.clone()).collect();
 
                 depth += 1; // Increase the depth for the next iteration
@@ -203,9 +206,11 @@ impl AlphaBetaEngine {
             *node_count -= 1;
             return AlphaBetaEngine::quiescence_search_prunning(
                 board,
-                node_count,
                 alpha,
                 beta,
+                node_count,
+                ply,
+                &mut self.current_max_depth,
                 deadline,
                 &self.aborted,
             );
@@ -282,9 +287,11 @@ impl AlphaBetaEngine {
 
     fn quiescence_search_prunning(
         board: &ChessBoard,
-        node_count: &mut u64,
         mut alpha: i32,
         beta: i32,
+        node_count: &mut u64,
+        ply: usize,
+        current_max_depth: &mut usize,
         deadline: Instant,
         aborted: &Arc<AtomicBool>,
     ) -> Option<i32> {
@@ -292,6 +299,9 @@ impl AlphaBetaEngine {
             return None;
         }
         *node_count += 1;
+        if ply > *current_max_depth {
+            *current_max_depth = ply;
+        }
 
         let stand_pat =
             AlphaBetaEngine::evaluate_board(board) * if board.active_color == Color::White { 1 } else { -1 };
@@ -310,7 +320,7 @@ impl AlphaBetaEngine {
             let mut new_board = board.clone();
             new_board.make_move(mv);
             let score = match AlphaBetaEngine::quiescence_search_prunning(
-                &new_board, node_count, -beta, -alpha, deadline, aborted,
+                &new_board, -beta, -alpha, node_count, ply + 1, current_max_depth, deadline, aborted,
             ) {
                 None => return None,
                 Some(score) => -score,

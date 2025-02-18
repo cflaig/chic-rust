@@ -225,7 +225,7 @@ fn make_engine_move(state: &Rc<State>) {
         let mut engine = AlphaBetaEngine::with_board(chess_board);
         if let Some((best_move, score, node_count, depth)) = engine.find_best_move_iterative(
             std::time::Duration::from_secs(7),
-            |_depth, _eval, _nodes, _elapsed, _pv| {
+            |_depth, _seldepth, _eval, _nodes, _elapsed, _pv| {
                 // No-op
             },
         ) {

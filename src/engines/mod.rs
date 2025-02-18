@@ -7,7 +7,7 @@ pub mod engine_alpha_beta;
 pub mod engine_minmax;
 pub mod uci;
 
-type InfoCallback = fn(depth: i32, best_eval: i32, nodes: u64, elapsed: Duration, pv: String);
+type InfoCallback = fn(depth: usize, seldepth: usize, best_eval: i32, nodes: u64, elapsed: Duration, pv: String);
 
 pub trait ChessEngine {
     fn name(&self) -> &str;
