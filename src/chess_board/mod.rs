@@ -1,3 +1,4 @@
+use crate::chess_board::Square::Occupied;
 use crate::chess_board::zobrist_hash::ZOBRIST;
 use circular_buffer::CircularBuffer;
 use std::fmt;
@@ -193,7 +194,6 @@ impl ChessBoard {
 
         for row in 0..8 {
             for col in 0..8 {
-                // Only process pieces of the active color
                 all_moves.extend(self.generate_pseudo_moves_from_position(row, col));
             }
         }
@@ -238,11 +238,9 @@ impl ChessBoard {
 
         // Regular forward move
         if self.squares[new_row][col] == Square::Empty {
+            let mv = Move::new(row, col, new_row, col);
             Self::add_pawn_moves_with_and_without_promotion(
-                row,
-                col,
-                new_row,
-                col,
+                mv,
                 promotion_row,
                 NO_CAPTURE,
                 &mut moves,
@@ -266,13 +264,11 @@ impl ChessBoard {
             let new_col = (col as isize + dx) as usize;
             if let Square::Occupied(opponent_piece) = self.squares[new_row][new_col] {
                 if opponent_piece.color != self.active_color {
+                    let mv = Move::new(row, col, new_row, new_col);
                     Self::add_pawn_moves_with_and_without_promotion(
-                        row,
-                        col,
-                        new_row,
-                        new_col,
+                        mv,
                         promotion_row,
-                        CAPTURE_BASE + get_piece_value(&opponent_piece.kind) - 1,
+                        self.compute_capture_score(&mv),
                         &mut moves,
                     );
                 }
@@ -282,7 +278,9 @@ impl ChessBoard {
         // En passant
         if let Some(en_passant) = self.en_passant {
             if new_row == en_passant.row && (col as isize - en_passant.col as isize).abs() == 1 {
-                moves.push((Move::new(row, col, en_passant.row, en_passant.col), CAPTURE_BASE));
+                let pawn = Piece {color: Color::White, kind: PieceType::Pawn};
+                let mv = Move::new(row, col, en_passant.row, en_passant.col);
+                moves.push((mv, self.compute_capture_score(&mv)));
             }
         }
 
@@ -290,23 +288,20 @@ impl ChessBoard {
     }
 
     fn add_pawn_moves_with_and_without_promotion(
-        row: usize,
-        col: usize,
-        new_row: usize,
-        new_col: usize,
+        mv: Move,
         promotion_row: usize,
         score: i32,
         moves: &mut Vec<(Move, i32)>,
     ) {
-        if new_row == promotion_row {
+        if mv.to.row == promotion_row {
             for &promotion_piece in &[PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
                 moves.push((
-                    Move::new(row, col, new_row, new_col).with_promotion(promotion_piece),
+                    mv.with_promotion(promotion_piece),
                     score + 1,
                 ));
             }
         } else {
-            moves.push((Move::new(row, col, new_row, new_col), score));
+            moves.push((mv, score));
         }
     }
 
@@ -343,9 +338,10 @@ impl ChessBoard {
                     Square::Empty => moves.push((Move::new(row, col, new_row as usize, new_col as usize), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
+                            let mv = Move::new(row, col, new_row as usize, new_col as usize);
                             moves.push((
-                                Move::new(row, col, new_row as usize, new_col as usize),
-                                CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind),
+                                mv,
+                                self.compute_capture_score(&mv),
                             ));
                         }
                         break; // Block sliding
@@ -662,9 +658,10 @@ impl ChessBoard {
                     Square::Empty => moves.push((Move::new(row, col, new_row, new_col), NO_CAPTURE)),
                     Square::Occupied(p) => {
                         if p.color != self.active_color {
+                            let mv = Move::new(row, col, new_row, new_col);
                             moves.push((
-                                Move::new(row, col, new_row, new_col),
-                                CAPTURE_BASE + get_piece_value(&p.kind) - get_piece_value(&moving_piece.kind),
+                                mv,
+                                self.compute_capture_score(&mv),
                             ));
                         }
                     }
@@ -672,6 +669,19 @@ impl ChessBoard {
             }
         }
         moves
+    }
+
+    fn compute_capture_score(&self, mv: &Move) -> i32 {
+        if let Occupied(moving_piece) = self.squares[mv.from.row][mv.from.col] {
+            match self.squares[mv.to.row][mv.to.col] {
+                Square::Empty => NO_CAPTURE,
+                Square::Occupied(captured_piece) => {
+                        CAPTURE_BASE + 100 * get_piece_value(&captured_piece.kind) - get_piece_value(&moving_piece.kind)
+                }
+            }
+        } else {
+            NO_CAPTURE
+        }
     }
 
     pub fn find_king_position(&self, color: Color) -> Option<ChessField> {
