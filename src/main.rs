@@ -135,7 +135,7 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
     println!("Perft test for {} moves {:?} with depth {}", fen, moves, depth);
     let mut chess_board = ChessBoard::from_fen(&fen).unwrap();
     for m in moves {
-        let legal_move = chess_board.generate_legal_moves();
+        let legal_move = chess_board.generate_legal_moves(None);
         if legal_move.contains(&Move::from_algebraic(m)) {
             chess_board.make_move(Move::from_algebraic(m));
         } else {
@@ -144,7 +144,7 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
     }
 
     let mut result_moves = Vec::<(String, u64)>::new();
-    for mv in chess_board.generate_legal_moves() {
+    for mv in chess_board.generate_legal_moves(None) {
         let mut new_board = chess_board.clone();
         new_board.make_move(mv);
         result_moves.push((mv.as_algebraic(), chess_board::perft(&new_board, depth - 1)));

@@ -17,7 +17,7 @@ pub fn find_best_move_with_timeout(
     let mut best_score = i32::MIN;
     let mut node_count = 0;
 
-    let mut moves = board.generate_legal_moves();
+    let mut moves = board.generate_legal_moves(None);
     if random {
         moves.shuffle(&mut rand::thread_rng());
     }

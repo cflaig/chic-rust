@@ -140,11 +140,13 @@ pub struct ChessBoard {
     pub fullmove_number: u32,
     pub hash: u64,
     pub king_position: [ChessField; 2],
+    pub last_capture: ChessField,
 }
 const NO_CAPTURE: i32 = 0;
 const CAPTURE: i32 = 10000;
 const CAPTURE_BASE: i32 = CAPTURE + 10;
 const CASTLING_SCORE: i32 = 50;
+const BEST_MOVE: i32 = 1000_000;
 
 fn get_piece_value(piece: &PieceType) -> i32 {
     match piece {
@@ -169,6 +171,7 @@ impl ChessBoard {
             fullmove_number: 1,
             hash: 0,
             king_position: [ChessField { row: 99, col: 99 }; 2],
+            last_capture: ChessField { row: 99, col: 99 },
         }
     }
 
@@ -434,7 +437,13 @@ impl ChessBoard {
                 hash = zobrist.update_piece(hash, p, mv.from.row, mv.from.col);
                 self.squares[mv.from.row][mv.from.col] = Square::Empty;
 
-                hash = zobrist.update_square(hash, self.squares[mv.to.row][mv.to.col], mv.to.row, mv.to.col);
+
+                if let Square::Occupied(piece) = self.squares[mv.to.row][mv.to.col] {
+                    hash = zobrist.update_piece(hash, piece, mv.to.row, mv.to.col);
+                    self.last_capture = mv.to;
+                } else {
+                    self.last_capture = ChessField {row: 99, col: 99};
+                }
                 hash = zobrist.update_piece(hash, p, mv.to.row, mv.to.col);
                 self.squares[mv.to.row][mv.to.col] = piece;
 
@@ -676,7 +685,11 @@ impl ChessBoard {
             match self.squares[mv.to.row][mv.to.col] {
                 Square::Empty => NO_CAPTURE,
                 Square::Occupied(captured_piece) => {
+                    if mv.to == self.last_capture {
+                        CAPTURE * 2 + 100 * get_piece_value(&captured_piece.kind) - get_piece_value(&moving_piece.kind)
+                    } else {
                         CAPTURE_BASE + 100 * get_piece_value(&captured_piece.kind) - get_piece_value(&moving_piece.kind)
+                    }
                 }
             }
         } else {
@@ -713,7 +726,7 @@ impl ChessBoard {
         None // Should never occur in a valid chess position
     }
 
-    pub fn generate_legal_moves(&self) -> Vec<Move> {
+    pub fn generate_legal_moves(&self, guess_of_best_move: Option<Move>) -> Vec<Move> {
         let mut legal_moves = Vec::new();
 
         // Generate all pseudo-legal moves
@@ -735,8 +748,19 @@ impl ChessBoard {
                 }
             }
         }
+        Self::compute_move_weights(&mut legal_moves, guess_of_best_move);
         legal_moves.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         legal_moves.iter().map(|m| m.0).collect()
+    }
+
+    fn compute_move_weights(moves: &mut Vec<(Move, i32)>, guess_of_best_move: Option<Move>) {
+        moves.iter_mut().for_each(  |mut mv| {
+            if let Some(guess) = guess_of_best_move {
+                if mv.0 == guess {
+                    mv.1 = BEST_MOVE;
+                }
+        }
+        });
     }
 
     pub fn generate_capture_moves(&self) -> Vec<Move> {
@@ -798,7 +822,7 @@ impl ChessBoard {
         } else {
             return false;
         }
-        self.generate_legal_moves().is_empty()
+        self.generate_legal_moves(None).is_empty()
     }
 
     #[allow(dead_code)]
@@ -812,7 +836,7 @@ impl ChessBoard {
             return false;
         }
 
-        self.generate_legal_moves().is_empty()
+        self.generate_legal_moves(None).is_empty()
     }
 
     #[allow(dead_code)]
@@ -867,7 +891,7 @@ pub fn perft(board: &ChessBoard, depth: u8) -> u64 {
         return 1u64;
     }
 
-    let moves = board.generate_legal_moves();
+    let moves = board.generate_legal_moves(None);
     if moves.is_empty() {
         return 0u64;
     }
@@ -1241,7 +1265,7 @@ mod tests {
         board.make_move(Move::from_algebraic("c7c5"));
         let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
         assert_moves(board.generate_pseudo_moves_from_algebraic("d5"), expected_moves.clone());
-        let generated_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m| m.as_algebraic()).collect();
+        let generated_moves: Vec<_> = board.generate_legal_moves(None).iter().map(|&m| m.as_algebraic()).collect();
 
         for mv in expected_moves {
             if !generated_moves.contains(&mv.to_string()) {
@@ -1269,7 +1293,7 @@ mod tests {
         let mut board = ChessBoard::from_fen("8/2p5/3p4/KP5r/1R3pPk/8/4P3/8 b - g3 0 1").unwrap();
         board.make_move(Move::from_algebraic("h4g3"));
         let expected_moves = vec!["g4g5", "g4h5"];
-        let mut debug_moves: Vec<_> = board.generate_legal_moves().iter().map(|&m| m.as_algebraic()).collect();
+        let mut debug_moves: Vec<_> = board.generate_legal_moves(None).iter().map(|&m| m.as_algebraic()).collect();
         debug_moves.sort();
         println!("{:?}", debug_moves.len());
         println!("{:?}", debug_moves);
@@ -1484,7 +1508,7 @@ mod tests {
     #[test]
     fn test_pinned_piece() {
         let board = ChessBoard::from_fen("1k6/8/8/8/3q4/8/1R6/K7 w - - 0 1").unwrap();
-        assert_moves(board.generate_legal_moves(), vec!["a1a2", "a1b1"])
+        assert_moves(board.generate_legal_moves(None), vec!["a1a2", "a1b1"])
     }
 
     #[test]
@@ -1548,7 +1572,7 @@ mod tests {
             return;
         }
 
-        let moves = board.generate_legal_moves();
+        let moves = board.generate_legal_moves(None);
         if moves.is_empty() {
             return;
         }

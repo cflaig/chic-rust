@@ -103,7 +103,7 @@ impl ChessEngine for AlphaBetaEngine {
                     .collect::<Vec<_>>()
                     .join(" ");
                 info_callback(depth, self.current_max_depth, current_score, total_node_count, start_time.elapsed(), pv);
-                self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1].iter().rev().map(|c|c.clone()).collect();
+                self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1].iter().map(|c|c.clone()).collect();
 
                 depth += 1; // Increase the depth for the next iteration
             } else {
@@ -140,11 +140,17 @@ impl AlphaBetaEngine {
         let mut best_move = None;
         let mut best_score = i32::MIN;
         let mut node_count = 0;
+        let mut is_principal_variation = true;
 
         let deadline = Instant::now() + remaining_time;
 
+        let last_pv_move = if self.last_pvs.is_empty() {
+            None
+        } else {
+            Some(self.last_pvs[0])
+        };
 
-        let mut moves = self.board.generate_legal_moves();
+        let mut moves = self.board.generate_legal_moves(last_pv_move);
         if random {
             moves.shuffle(&mut rand::thread_rng());
         }
@@ -159,7 +165,7 @@ impl AlphaBetaEngine {
             let hash = new_board.hash;
             self.insert_hash(hash);
 
-            let score = match self.negamax(&new_board, depth, MIN_EVALUATION, -alpha, 1, deadline, &mut node_count) {
+            let score = match self.negamax(&new_board, depth - 1, MIN_EVALUATION, -alpha, 1, is_principal_variation, deadline, &mut node_count) {
                 None => {
                     self.remove_hash(&hash);
                     return None;
@@ -167,6 +173,7 @@ impl AlphaBetaEngine {
                 Some(score) => -score,
             };
             self.remove_hash(&hash);
+            is_principal_variation = false;
 
             if score > best_score {
                 alpha = score;
@@ -187,6 +194,7 @@ impl AlphaBetaEngine {
         alpha: i32,
         beta: i32,
         ply: usize,
+        mut is_principal_variation: bool,
         deadline: Instant,
         node_count: &mut u64,
     ) -> Option<i32> {
@@ -219,7 +227,13 @@ impl AlphaBetaEngine {
         let mut alpha = alpha;
         let mut max_score = MIN_EVALUATION;
 
-        let moves = board.generate_legal_moves();
+        let last_pv_move = if (0..self.last_pvs.len()).contains(&ply) && is_principal_variation  {
+            Some(self.last_pvs[ply])
+        } else {
+            None
+        };
+
+        let moves = board.generate_legal_moves(last_pv_move);
         if moves.is_empty() {
             // Handle checkmate or stalemate
             if board.is_checkmate() {
@@ -234,13 +248,14 @@ impl AlphaBetaEngine {
             new_board.make_move(mv);
             let hash = new_board.hash;
             self.insert_hash(hash);
-            let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, deadline, node_count) {
+            let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, is_principal_variation, deadline, node_count) {
                 None => {
                     self.remove_hash(&hash);
                     return None;
                 }
                 Some(score) => -score,
             };
+            is_principal_variation = false;
             self.remove_hash(&hash);
             if score > max_score {
                 max_score = score;

@@ -97,7 +97,7 @@ pub fn highlight_move(state: &Rc<State>, position: ChessField) {
         return;
     }
 
-    let moves = state.chess_board.borrow().generate_legal_moves();
+    let moves = state.chess_board.borrow().generate_legal_moves(None);
     for m in moves {
         if m.from.row == position.row && m.from.col == position.col {
             let index = m.to.row * 8 + m.to.col;
@@ -132,7 +132,7 @@ pub fn setup_ui(fen: &str) {
                 Some(source) => {
                     let chess_board = state.chess_board.borrow().clone();
                     let moves = chess_board
-                        .generate_legal_moves()
+                        .generate_legal_moves(None)
                         .into_iter()
                         .filter(|&m| m.from.row == source.row && m.from.col == source.col)
                         .collect::<Vec<_>>();
