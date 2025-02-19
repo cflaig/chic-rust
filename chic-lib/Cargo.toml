@@ -1,0 +1,9 @@
+[package]
+name = "chic-lib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lazy_static.workspace = true
+rand.workspace = true
+rand_pcg.workspace = true

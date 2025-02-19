@@ -1,23 +1,20 @@
-use crate::chess_board::Move;
 use std::time::Instant;
-mod chess_board;
-mod engines;
+
 mod ui;
-
-use chess_board::ChessBoard;
-use chess_board::ChessField;
-
-use crate::engines::engine_minmax::find_best_move;
-use ui::setup_ui;
 
 use clap::arg;
 use clap::command;
 use clap::Command;
 
-use crate::engines::uci::run_uci_interface;
+use chic_lib::chess_boards::chess_board::{ChessBoard, Move};
+use chic_lib::engines::engine_minmax::find_best_move;
+use chic_lib::engines::uci::run_uci_interface;
+
 use tabled::settings::Style;
 use tabled::Table;
 use tabled::Tabled;
+
+use ui::setup_ui;
 
 slint::include_modules!();
 
@@ -135,7 +132,7 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
     println!("Perft test for {} moves {:?} with depth {}", fen, moves, depth);
     let mut chess_board = ChessBoard::from_fen(&fen).unwrap();
     for m in moves {
-        let legal_move = chess_board.generate_legal_moves(None);
+        let legal_move = chess_board.generate_legal_moves(None).into_iter().collect::<Vec<_>>();
         if legal_move.contains(&Move::from_algebraic(m)) {
             chess_board.make_move(Move::from_algebraic(m));
         } else {
@@ -147,7 +144,10 @@ fn perft(fen: String, moves: Vec<&String>, depth: u8) {
     for mv in chess_board.generate_legal_moves(None) {
         let mut new_board = chess_board.clone();
         new_board.make_move(mv);
-        result_moves.push((mv.as_algebraic(), chess_board::perft(&new_board, depth - 1)));
+        result_moves.push((
+            mv.as_algebraic(),
+            chic_lib::chess_boards::perft::perft(&new_board, depth - 1),
+        ));
     }
     result_moves.sort();
 

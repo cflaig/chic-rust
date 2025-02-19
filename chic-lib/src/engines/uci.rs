@@ -1,5 +1,5 @@
-use crate::chess_board::fen::INITIAL_POSITION;
-use crate::chess_board::Color;
+use crate::chess_boards::chess_board::fen::INITIAL_POSITION;
+use crate::chess_boards::chess_board::Color;
 use crate::engines::engine_alpha_beta::AlphaBetaEngine;
 use crate::engines::ChessEngine;
 use std::io::BufRead;
@@ -13,7 +13,7 @@ use std::{result, thread};
 
 const MAX_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 10);
 
-pub(crate) fn run_uci_interface() {
+pub fn run_uci_interface() {
     let mut engine = Arc::new(Mutex::new(AlphaBetaEngine::new()));
     let mut abort = engine.lock().unwrap().get_abort_channel();
 
@@ -64,7 +64,7 @@ pub(crate) fn run_uci_interface() {
             },
             "go" => {
                 let mut search_time = parse_go_command(&tokens[1..], engine.lock().unwrap().get_active_player());
-                let (depth, nodes) = parse_depth_and_nodes(&tokens[1..]);
+                let (_depth, _nodes) = parse_depth_and_nodes(&tokens[1..]);
                 if tokens.len() > 1 {
                     match tokens[1] {
                         "infinite" => {

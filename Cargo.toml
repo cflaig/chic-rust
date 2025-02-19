@@ -1,30 +1,21 @@
-[package]
+[workspace]
+members = ["chic-lib", "chic-engine", "chic-ui"]
+resolver = "2"
+
+[workspace.package]
 name = "chic"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-slint = "1.9.1"
+[workspace.dependencies]
+clap = { version = "4.5.31", features = ["cargo"] }
 lazy_static = "1.5.0"
-clap = { version = "4.5.26", features = ["cargo"] }
-tabled = "0.17.0"
-rand = "0.8"
-rand_pcg = "0.3"
-circular-buffer = "0.1.9"
+rand = "0.9.0"
+rand_pcg = "0.9.0"
+slint = "1.10.0"
+tabled = "0.18.0"
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[workspace.target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2" }
 getrandom = { version = "0.2.2", features = ["js"] }
 web-time = "1.1.0"
-
-[lib]
-path = "src/main.rs"
-crate-type = ["cdylib"]
-
-[build-dependencies]
-slint-build = "1.9.1"
-
-[profile.release]
-debug = "full"

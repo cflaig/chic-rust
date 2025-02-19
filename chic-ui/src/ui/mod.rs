@@ -1,14 +1,10 @@
-use crate::chess_board::PieceType;
-use crate::chess_board::Square;
-use crate::chess_board::Square::Occupied;
-use crate::chess_board::{Color, Piece};
-use crate::engines::engine_alpha_beta::AlphaBetaEngine;
-use crate::engines::ChessEngine;
-use crate::ChessBoard;
-use crate::ChessField;
 use crate::MainWindow;
-use crate::Move;
 use crate::UiField;
+use chic_lib::chess_boards::chess_board::ChessBoard;
+use chic_lib::chess_boards::chess_board::Square::Occupied;
+use chic_lib::chess_boards::chess_board::{ChessField, Color, Move, Piece, PieceType, Square};
+use chic_lib::engines::engine_alpha_beta::AlphaBetaEngine;
+use chic_lib::engines::ChessEngine;
 use lazy_static::lazy_static;
 use slint::Image;
 use slint::Model;
@@ -24,18 +20,36 @@ use std::rc::Rc;
 lazy_static! {
     static ref PIECE_IMAGES: HashMap<(Color, PieceType), &'static str> = {
         let mut map = HashMap::new();
-        map.insert((Color::White, PieceType::Pawn), "ui/icons/Piece_White_Pawn.svg");
-        map.insert((Color::White, PieceType::Knight), "ui/icons/Piece_White_Knight.svg");
-        map.insert((Color::White, PieceType::Bishop), "ui/icons/Piece_White_Bishop.svg");
-        map.insert((Color::White, PieceType::Rook), "ui/icons/Piece_White_Rock.svg");
-        map.insert((Color::White, PieceType::Queen), "ui/icons/Piece_White_Queen.svg");
-        map.insert((Color::White, PieceType::King), "ui/icons/Piece_White_King.svg");
-        map.insert((Color::Black, PieceType::Pawn), "ui/icons/Piece_Black_Pawn.svg");
-        map.insert((Color::Black, PieceType::Knight), "ui/icons/Piece_Black_Knight.svg");
-        map.insert((Color::Black, PieceType::Bishop), "ui/icons/Piece_Black_Bishop.svg");
-        map.insert((Color::Black, PieceType::Rook), "ui/icons/Piece_Black_Rock.svg");
-        map.insert((Color::Black, PieceType::Queen), "ui/icons/Piece_Black_Queen.svg");
-        map.insert((Color::Black, PieceType::King), "ui/icons/Piece_Black_King.svg");
+        map.insert((Color::White, PieceType::Pawn), "chic-ui/ui/icons/Piece_White_Pawn.svg");
+        map.insert(
+            (Color::White, PieceType::Knight),
+            "chic-ui/ui/icons/Piece_White_Knight.svg",
+        );
+        map.insert(
+            (Color::White, PieceType::Bishop),
+            "chic-ui/ui/icons/Piece_White_Bishop.svg",
+        );
+        map.insert((Color::White, PieceType::Rook), "chic-ui/ui/icons/Piece_White_Rock.svg");
+        map.insert(
+            (Color::White, PieceType::Queen),
+            "chic-ui/ui/icons/Piece_White_Queen.svg",
+        );
+        map.insert((Color::White, PieceType::King), "chic-ui/ui/icons/Piece_White_King.svg");
+        map.insert((Color::Black, PieceType::Pawn), "chic-ui/ui/icons/Piece_Black_Pawn.svg");
+        map.insert(
+            (Color::Black, PieceType::Knight),
+            "chic-ui/ui/icons/Piece_Black_Knight.svg",
+        );
+        map.insert(
+            (Color::Black, PieceType::Bishop),
+            "chic-ui/ui/icons/Piece_Black_Bishop.svg",
+        );
+        map.insert((Color::Black, PieceType::Rook), "chic-ui/ui/icons/Piece_Black_Rock.svg");
+        map.insert(
+            (Color::Black, PieceType::Queen),
+            "chic-ui/ui/icons/Piece_Black_Queen.svg",
+        );
+        map.insert((Color::Black, PieceType::King), "chic-ui/ui/icons/Piece_Black_King.svg");
         map
     };
 }
@@ -101,9 +115,9 @@ pub fn highlight_move(state: &Rc<State>, position: ChessField) {
     for m in moves {
         if m.from.row == position.row && m.from.col == position.col {
             let index = m.to.row * 8 + m.to.col;
-            if let Some(mut p) = pieces.row_data(index) {
+            if let Some(mut p) = pieces.row_data(index as usize) {
                 p.highlighted_for_move = true;
-                pieces.set_row_data(index, p);
+                pieces.set_row_data(index as usize, p);
             }
         }
     }
@@ -121,7 +135,7 @@ pub fn setup_ui(fen: &str) {
     state.main_ui.on_clicked(move |index| {
         if let Some(state) = state_weak.upgrade() {
             let (row, col) = index_to_row_col(index.try_into().unwrap());
-            let clicked_field = ChessField::new(row, col);
+            let clicked_field = ChessField::new(row as u8, col as u8);
             let mut selected_field = state.selected_field.borrow_mut();
 
             match *selected_field {
@@ -139,7 +153,7 @@ pub fn setup_ui(fen: &str) {
                     if moves.iter().any(|m| m.to == clicked_field) {
                         let mv = Move::new(source.row, source.col, clicked_field.row, clicked_field.col);
 
-                        if let Occupied(piece) = chess_board.squares[source.row][source.col] {
+                        if let Occupied(piece) = chess_board.squares[source.row as usize][source.col as usize] {
                             if is_promotion(clicked_field, piece) {
                                 set_piece_color_of_the_promotion_dialog(&state.main_ui, piece.color);
                                 state.main_ui.set_promotion_dialog_visible(true);

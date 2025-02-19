@@ -1,4 +1,5 @@
-use super::{ChessBoard, ChessField, Color, Piece, PieceType, Square};
+use super::ChessBoard;
+use super::{ChessField, Color, Piece, PieceType, Square};
 use lazy_static::lazy_static;
 use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
@@ -23,24 +24,24 @@ impl ZobristHash {
             for piece_type_keys in color_keys {
                 // 6 unique piece types (e.g., Pawn, Knight, etc.)
                 for square_key in piece_type_keys {
-                    *square_key = rng.gen();
+                    *square_key = rng.random();
                 }
             }
         }
 
         // Random number for side-to-move
-        let side_to_move_key = rng.gen();
+        let side_to_move_key = rng.random();
 
         // Random numbers for castling rights
         let mut castling_keys = [0; 4];
         for key in &mut castling_keys {
-            *key = rng.gen();
+            *key = rng.random();
         }
 
         // Random numbers for en passant file
         let mut en_passant_keys = [0; BOARD_SIZE];
         for file in &mut en_passant_keys {
-            *file = rng.gen();
+            *file = rng.random();
         }
 
         ZobristHash {
@@ -51,7 +52,7 @@ impl ZobristHash {
         }
     }
 
-    pub fn update_square(&self, hash: u64, square: Square, row: usize, col: usize) -> u64 {
+    pub fn update_square(&self, hash: u64, square: Square, row: u8, col: u8) -> u64 {
         if let Square::Occupied(piece) = square {
             self.update_piece(hash, piece, row, col)
         } else {
@@ -59,8 +60,8 @@ impl ZobristHash {
         }
     }
 
-    pub fn update_piece(&self, hash: u64, piece: Piece, row: usize, col: usize) -> u64 {
-        let square_index = row * BOARD_SIZE + col;
+    pub fn update_piece(&self, hash: u64, piece: Piece, row: u8, col: u8) -> u64 {
+        let square_index = row as usize * BOARD_SIZE + col as usize;
         let color_index = Self::get_color_index(piece);
         let piece_index = Self::get_piece_index(piece);
         hash ^ self.piece_keys[color_index][piece_index][square_index]
@@ -81,7 +82,7 @@ impl ZobristHash {
 
     pub fn update_enpassing(&self, hash: u64, en_passant_field: Option<ChessField>) -> u64 {
         if let Some(en_passant) = en_passant_field {
-            hash ^ self.en_passant_keys[en_passant.col]
+            hash ^ self.en_passant_keys[en_passant.col as usize]
         } else {
             hash
         }
@@ -116,7 +117,7 @@ impl ZobristHash {
 
         // Hash en passant
         if let Some(en_passant) = board.en_passant {
-            hash ^= self.en_passant_keys[en_passant.col];
+            hash ^= self.en_passant_keys[en_passant.col as usize];
         }
 
         hash

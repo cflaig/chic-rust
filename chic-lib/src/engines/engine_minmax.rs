@@ -1,5 +1,6 @@
-use crate::chess_board::Square::Empty;
-use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
+use crate::chess_boards::chess_board::ChessBoard;
+use crate::chess_boards::chess_board::Square::Empty;
+use crate::chess_boards::chess_board::{Color, Move, PieceType, Square};
 use rand::prelude::SliceRandom;
 use std::time::{Duration, Instant};
 
@@ -17,9 +18,9 @@ pub fn find_best_move_with_timeout(
     let mut best_score = i32::MIN;
     let mut node_count = 0;
 
-    let mut moves = board.generate_legal_moves(None);
+    let mut moves = board.generate_legal_moves(None).collect::<Vec<_>>();
     if random {
-        moves.shuffle(&mut rand::thread_rng());
+        moves.shuffle(&mut rand::rng());
     }
     let start_time = Instant::now();
 
@@ -28,7 +29,7 @@ pub fn find_best_move_with_timeout(
             return None;
         }
         let mut new_board = board.clone();
-        let last_capture_move = if new_board.squares[mv.to.row][mv.to.col] == Empty {
+        let last_capture_move = if new_board.squares[mv.to.row as usize][mv.to.col as usize] == Empty {
             None
         } else {
             Some(mv)
@@ -97,9 +98,9 @@ fn negamax(board: &ChessBoard, depth: i32, node_count: &mut u64, last_capture_mo
 
     let mut max_score = MIN_EVALUATION;
 
-    for (mv, _) in board.generate_pseudo_moves() {
+    for (_, mv) in board.generate_pseudo_moves() {
         let mut new_board = board.clone();
-        let last_capture_move = if new_board.squares[mv.to.row][mv.to.col] == Empty {
+        let last_capture_move = if new_board.squares[mv.to.row as usize][mv.to.col as usize] == Empty {
             None
         } else {
             Some(mv)
@@ -141,11 +142,10 @@ fn quiescence_search(board: &ChessBoard, node_count: &mut u64, &last_move: &Move
     //println!("Number of Capture Moves: {}", moves.len() );
 
     for mv in moves
-        .iter()
         .filter(|mv| mv.to.row == last_move.to.row && mv.to.col == last_move.to.col)
     {
         let mut new_board = board.clone();
-        new_board.make_move(*mv);
+        new_board.make_move(mv);
         let score = -quiescence_search(&new_board, node_count, &last_move);
         max_score = max_score.max(score);
     }
@@ -189,7 +189,7 @@ fn evaluate_board(board: &ChessBoard) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::ChessBoard;
+    use crate::chess_boards::chess_board::ChessBoard;
 
     #[test]
     fn test_some_positions() {

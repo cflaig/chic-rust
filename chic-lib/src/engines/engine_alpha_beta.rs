@@ -1,10 +1,10 @@
-use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
+use crate::chess_boards::chess_board::ChessBoard;
+use crate::chess_boards::chess_board::{Color, Move, PieceType};
 use crate::engines::{ChessEngine, InfoCallback};
-use rand::prelude::SliceRandom;
+use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
-use std::collections::BTreeMap;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -13,7 +13,7 @@ use web_time::{Instant, SystemTime};
 
 pub const MAX_PLY: usize = 20;
 const MIN_EVALUATION: i32 = i32::MIN + 1; // +1 is important because -MIN is not a i32 number
-const WIN: i32 = 10_000_000;
+pub const WIN: i32 = 10_000_000;
 const LOSS: i32 = -10_000_000;
 const DRAW: i32 = 0;
 
@@ -87,7 +87,7 @@ impl ChessEngine for AlphaBetaEngine {
             self.current_max_depth = depth;
 
             // Call the existing find_best_move function for the current depth.
-            if let Some((current_move, current_score, node_count)) =
+            if let Some((_move, current_score, node_count)) =
                 self.find_best_move_with_timeout(depth as i32, false, remaining_time)
             {
                 best_move = Some((
@@ -102,8 +102,18 @@ impl ChessEngine for AlphaBetaEngine {
                     .map(|mv| mv.as_algebraic())
                     .collect::<Vec<_>>()
                     .join(" ");
-                info_callback(depth, self.current_max_depth, current_score, total_node_count, start_time.elapsed(), pv);
-                self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1].iter().map(|c|c.clone()).collect();
+
+                info_callback(
+                    depth,
+                    self.current_max_depth,
+                    current_score,
+                    total_node_count,
+                    start_time.elapsed(),
+                    pv,
+                );
+                self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1]
+                    .iter().copied()
+                    .collect();
 
                 depth += 1; // Increase the depth for the next iteration
             } else {
@@ -134,7 +144,7 @@ impl AlphaBetaEngine {
     pub fn find_best_move_with_timeout(
         &mut self,
         depth: i32,
-        random: bool,
+        _random: bool,
         remaining_time: Duration,
     ) -> Option<(Move, i32, u64)> {
         let mut best_move = None;
@@ -150,10 +160,7 @@ impl AlphaBetaEngine {
             Some(self.last_pvs[0])
         };
 
-        let mut moves = self.board.generate_legal_moves(last_pv_move);
-        if random {
-            moves.shuffle(&mut rand::thread_rng());
-        }
+        let moves = self.board.generate_legal_moves(last_pv_move);
 
         let mut alpha = MIN_EVALUATION;
         for mv in moves {
@@ -165,8 +172,16 @@ impl AlphaBetaEngine {
             let hash = new_board.hash;
             self.insert_hash(hash);
 
-            let score = match self.negamax(&new_board, depth - 1, MIN_EVALUATION, -alpha, 1, is_principal_variation, deadline, &mut node_count) {
-
+            let score = match self.negamax(
+                &new_board,
+                depth - 1,
+                MIN_EVALUATION,
+                -alpha,
+                1,
+                is_principal_variation,
+                deadline,
+                &mut node_count,
+            ) {
                 None => {
                     self.remove_hash(&hash);
                     return None;
@@ -228,7 +243,7 @@ impl AlphaBetaEngine {
         let mut alpha = alpha;
         let mut max_score = MIN_EVALUATION;
 
-        let last_pv_move = if (0..self.last_pvs.len()).contains(&ply) && is_principal_variation  {
+        let last_pv_move = if (0..self.last_pvs.len()).contains(&ply) && is_principal_variation {
             Some(self.last_pvs[ply])
         } else {
             None
@@ -249,7 +264,16 @@ impl AlphaBetaEngine {
             new_board.make_move(mv);
             let hash = new_board.hash;
             self.insert_hash(hash);
-            let score = match self.negamax(&new_board, depth - 1, -beta, -alpha, ply + 1, is_principal_variation, deadline, node_count) {
+            let score = match self.negamax(
+                &new_board,
+                depth - 1,
+                -beta,
+                -alpha,
+                ply + 1,
+                is_principal_variation,
+                deadline,
+                node_count,
+            ) {
                 None => {
                     self.remove_hash(&hash);
                     return None;
@@ -293,7 +317,7 @@ impl AlphaBetaEngine {
         }
     }
 
-    fn save_principal_variation(&mut self, mv: Move, depth: usize, ply: usize) {
+    fn save_principal_variation(&mut self, mv: Move, _depth: usize, ply: usize) {
         self.principal_variation[ply].0[0] = mv;
         for i in 0..self.principal_variation[ply + 1].1 {
             self.principal_variation[ply].0[i + 1] = self.principal_variation[ply + 1].0[i];
@@ -336,7 +360,14 @@ impl AlphaBetaEngine {
             let mut new_board = board.clone();
             new_board.make_move(mv);
             let score = match AlphaBetaEngine::quiescence_search_prunning(
-                &new_board, -beta, -alpha, node_count, ply + 1, current_max_depth, deadline, aborted,
+                &new_board,
+                -beta,
+                -alpha,
+                node_count,
+                ply + 1,
+                current_max_depth,
+                deadline,
+                aborted,
             ) {
                 None => return None,
                 Some(score) => -score,
@@ -354,26 +385,15 @@ impl AlphaBetaEngine {
     #[rustfmt::skip]
     const PAWN_SQUARE_TABLE: [[i32; 8]; 8] = [
     [  0,   0,   0,   0,   0,   0,   0,   0],
-    [100, 100, 100, 100, 100, 100, 100, 100],
-    [ 25,  50,  50,  50,  50,  50,  50,  25],
-    [  0,   0,   0,   2,   2,   0,   0,   0],
+    [150, 150, 150, 150, 150, 150, 150, 150],
+    [ 75,  50,  50,  50,  50,  50,  50,  75],
+    [  0,   0,   0,  20,  20,   0,   0,   0],
     [  0,   0,  20,  25,  25,  20,   0,   0],
-    [  0,   0,  15,  10,  10,  15,   0,   0],
-    [  0,   0,   0,-250,-250,   0,   0,   0],
+    [  0,   0,  15, -50, -50,  15,   0,   0],
+    [  0,   0,   0,-250,-250,   0,   5,   5],
     [  0,   0,   0,   0,   0,   0,   0,   0],
 ];
 
-    #[rustfmt::skip]
-    const PAWN_SQUARE_TABLE_ENDGAME: [[i32; 8]; 8] = [
-    [  0,   0,   0,   0,   0,   0,   0,   0],
-    [500, 500, 500, 500, 500, 500, 500, 500],
-    [400, 400, 400, 400, 400, 400, 400, 400],
-    [300, 300, 300, 300, 300, 300, 300, 300],
-    [200, 200, 200, 200, 200, 200, 200, 200],
-    [100, 100, 100, 100, 100, 100, 100, 100],
-    [  0,   0,   0,-250,-250,   0,   0,   0],
-    [  0,   0,   0,   0,   0,   0,   0,   0],
-];
 
     #[rustfmt::skip]
     const KNIGHT_SQUARE_TABLE: [[i32; 8]; 8] = [
@@ -407,21 +427,34 @@ impl AlphaBetaEngine {
     [-100, -100, -100, -100, -100, -100, -100, -100],
     [-100, -100, -100, -100, -100, -100, -100, -100],
     [-100, -100, -100, -100, -100, -100, -100, -100],
-    [ -50,  -50,  -50,  -50,  -50, -500,  -50,  -50],
-    [ 300,  350,  400,  -50,    0,  -50,  500,  300],
+    [ -50,  -50,  -50,  -50,  -50, -100,  -50,  -50],
+    [ 200,  250,  200,  -50,    0,  -50,  250,  200],
 ];
 
     #[rustfmt::skip]
     const KING_SQUARE_TABLE_ENDGAME: [[i32; 8]; 8] = [
     [-200,-100,-100,-100,-100,-100,-100,-200],
     [-100,   0,   0,   0,   0,   0,   0,-100],
-    [-100,   0,  50,  50,  50,  50,   0,-100],
-    [-100,   0,  50, 100, 150,  50,   0,-100],
-    [-100,   0,  50, 100, 100,  50,   0,-100],
-    [-100,   0,  50,  50,  50,  50,   0,-100],
+    [-100,   0, 150, 150, 150, 150,   0,-100],
+    [-100,   0, 150, 200, 200, 150,   0,-100],
+    [-100,   0, 150, 200, 200, 150,   0,-100],
+    [-100,   0, 150, 150, 150, 150,   0,-100],
     [-100,   0,   0,   0,   0,   0,   0,-100],
     [-200,-100,-100,-100,-100,-100,-100,-200],
     ];
+
+    pub fn get_piece_type_index(piece: &PieceType) -> usize {
+        match piece {
+            PieceType::Pawn => 5,
+            PieceType::Knight => 4,
+            PieceType::Bishop => 3,
+            PieceType::Rook => 2,
+            PieceType::Queen => 1,
+            PieceType::King => 0,
+        }
+    }
+
+    const BISHOP_PAIR_BONUS: i32 = 300;
 
     /// Evaluates the board state and assigns a score based on material balance.
     fn evaluate_board(board: &ChessBoard) -> i32 {
@@ -429,90 +462,96 @@ impl AlphaBetaEngine {
         let mut black_material = 0;
         let mut white_material = 0;
 
-        for row in 0..8 {
-            for col in 0..8 {
-                match board.squares[row][col] {
-                    Square::Occupied(piece) => {
-                        let piece_value = match piece.kind {
-                            PieceType::Pawn => 1_000,
-                            PieceType::Knight => 3_000,
-                            PieceType::Bishop => 3_000,
-                            PieceType::Rook => 5_000,
-                            PieceType::Queen => 9_000,
-                            PieceType::King => WIN, // if one king is on the board, it is won
-                        };
+        const PIECE_TYPES: [(PieceType, i32); 4] = [
+            (PieceType::Queen, 9_000),
+            (PieceType::Rook, 5_000),
+            (PieceType::Bishop, 3_000),
+            (PieceType::Knight, 3_000),
+        ];
 
-                       match piece.color {
-                            Color::White => white_material += piece_value,
-                            Color::Black => black_material += piece_value,
-                        };
-                    }
-
-                    Square::Empty => {}
-                }
-            }
+        for (piece, value) in PIECE_TYPES {
+            white_material += (board.white_pieces[AlphaBetaEngine::get_piece_type_index(&piece) + 1]
+                - board.white_pieces[AlphaBetaEngine::get_piece_type_index(&piece)])
+                as i32
+                * value;
+        }
+        for (piece, value) in PIECE_TYPES {
+            black_material += (board.black_pieces[AlphaBetaEngine::get_piece_type_index(&piece) + 1]
+                - board.black_pieces[AlphaBetaEngine::get_piece_type_index(&piece)])
+                as i32
+                * value;
         }
 
-        let use_endgame = black_material - WIN < 17_000 || white_material - WIN < 17_000;
+        let black_material_pawns = (board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Pawn) + 1]
+            - board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Pawn)])
+            as i32
+            * 1_000;
+        let white_material_pawns = (board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Pawn) + 1]
+            - board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Pawn)])
+            as i32
+            * 1_000;
 
-        for row in 0..8 {
-            for col in 0..8 {
-                match board.squares[row][col] {
-                    Square::Occupied(piece) => {
-                        //Check position value
-                        let psq_row = match piece.color {
-                            Color::White => 7 - row,
-                            Color::Black => row,
-                        };
-
-                        let possition_value = match piece.kind {
-                            PieceType::King => if use_endgame {
-                                AlphaBetaEngine::KING_SQUARE_TABLE_ENDGAME[psq_row][col]
-                            } else {
-                                AlphaBetaEngine::KING_SQUARE_TABLE[psq_row][col]
-                            },
-                            PieceType::Pawn => if use_endgame {
-                                AlphaBetaEngine::PAWN_SQUARE_TABLE_ENDGAME[psq_row][col]
-                            } else {
-                                AlphaBetaEngine::PAWN_SQUARE_TABLE[psq_row][col]
-                            },
-                            PieceType::Knight => AlphaBetaEngine::KNIGHT_SQUARE_TABLE[psq_row][col],
-                            PieceType::Bishop => AlphaBetaEngine::BISHOP_SQUARE_TABLE[psq_row][col],
-                            _ => 0,
-                        };
-
-                        evaluation += match piece.color {
-                            Color::White => possition_value,
-                            Color::Black => -possition_value,
-                        };
-                    }
-
-                    Square::Empty => {}
-                }
-            }
+        if board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop) + 1]
+            - board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)] > 1 {
+            white_material += Self::BISHOP_PAIR_BONUS;
         }
 
-        evaluation + white_material - black_material
+        if board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop) + 1]
+            - board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)] > 1 {
+            black_material += Self::BISHOP_PAIR_BONUS;
+        }
+
+        for (field, piece) in board.all_pieces_with_coordinates() {
+            //Check position value
+            let psq_row = match piece.color {
+                Color::White => 7 - field.row,
+                Color::Black => field.row,
+            };
+
+            let use_endgame = match piece.color {
+                Color::White => black_material <= 13_000,
+                Color::Black => white_material <= 13_000,
+            };
+
+            let position_value = match piece.kind {
+                PieceType::King => {
+                    if use_endgame {
+                        AlphaBetaEngine::KING_SQUARE_TABLE_ENDGAME[psq_row as usize][field.col as usize]
+                    } else {
+                        AlphaBetaEngine::KING_SQUARE_TABLE[psq_row as usize][field.col as usize]
+                    }
+                }
+                PieceType::Pawn => {
+                    if use_endgame {
+                        (7 - psq_row) as i32 * 100
+                    } else {
+                        AlphaBetaEngine::PAWN_SQUARE_TABLE[psq_row as usize][field.col as usize]
+                    }
+                }
+                PieceType::Knight => AlphaBetaEngine::KNIGHT_SQUARE_TABLE[psq_row as usize][field.col as usize],
+                PieceType::Bishop => AlphaBetaEngine::BISHOP_SQUARE_TABLE[psq_row as usize][field.col as usize],
+                _ => 0,
+            };
+
+            evaluation += match piece.color {
+                Color::White => position_value,
+                Color::Black => -position_value,
+            };
+        }
+
+        evaluation + white_material + white_material_pawns - black_material - black_material_pawns
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::ChessBoard;
+    use crate::chess_boards::chess_board::ChessBoard;
 
     #[test]
     fn test_some_positions() {
         let mut engine = AlphaBetaEngine::new();
-        engine.set_position("8/4p3/8/3P4/8/8/8/8 b - - 0 1");
-        if let Some((best_move, score, nodes)) = engine.find_best_move(2, false) {
-            assert!(false); //no valid position
-        } else {
-            println!("No best move found!");
-        }
-
-        let mut engine = AlphaBetaEngine::new();
-        engine.set_position("8/7k/5KR1/8/8/8/8/8 w - - 0 1");
+        let _ = engine.set_position("8/7k/5KR1/8/8/8/8/8 w - - 0 1");
         let depth = 5usize;
         if let Some((best_move, score, nodes)) = engine.find_best_move(depth as i32, false) {
             println!(
@@ -535,7 +574,7 @@ mod tests {
 
         let depth = 6usize;
         let mut engine = AlphaBetaEngine::new();
-        engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
+        let _ = engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
         if let Some((best_move, score, nodes)) = engine.find_best_move(depth as i32, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
@@ -559,7 +598,7 @@ mod tests {
     #[test]
     fn test_from_a_played_position() {
         let mut engine = AlphaBetaEngine::new();
-        engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
+        let _ = engine.set_position("4k1nr/2p3p1/b2pPp1p/8/1nN1P1P1/p1R2N2/PR3P2/5K2 b k - 1 26");
         if let Some((best_move, score, nodes)) = engine.find_best_move(0, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
@@ -575,7 +614,7 @@ mod tests {
     #[test]
     fn test_from_before_rochade() {
         let mut engine = AlphaBetaEngine::new();
-        engine.set_position("rnbqkbnr/p1p2ppp/1p1p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4");
+        let _ = engine.set_position("rnbqkbnr/p1p2ppp/1p1p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4");
         if let Some((best_move, score, nodes)) = engine.find_best_move(0, false) {
             println!(
                 "Best move: {} with score: {} evaluated nodes: {}",
@@ -593,13 +632,12 @@ mod tests {
     #[test]
     fn test_perpetual_check() {
         let mut engine = AlphaBetaEngine::new();
-        engine.set_position("1k1r2rq/6pp/Q7/8/8/8/6PP/7K w - - 0 1");
-        engine.make_move("a6b6");
-        engine.make_move("b8a8");
-        engine.make_move("b6a6");
-        engine.make_move("a8b8");
+        let _ = engine.set_position("1k1r2rq/6pp/Q7/8/8/8/6PP/7K w - - 0 1");
+        let _ = engine.make_move("a6b6");
+        let _ = engine.make_move("b8a8");
+        let _ = engine.make_move("b6a6");
+        let _ = engine.make_move("a8b8");
 
-        let depth = 5usize;
         for depth in 0..6 {
             if let Some((best_move, score, nodes)) = engine.find_best_move(depth, false) {
                 println!(
@@ -620,5 +658,26 @@ mod tests {
                 println!("No best move found!");
             }
         }
+    }
+
+    #[test]
+    fn test_eval_played_position() {
+        let mut engine = AlphaBetaEngine::new();
+        let _ = engine.set_position("rnbq1rk1/ppp2ppp/3bpn2/3p4/8/3BPN1P/PPPP1P1P/RNBQ1RK1 w Qq - 0 1");
+        println!("Evaluation: {}", AlphaBetaEngine::evaluate_board(&engine.board));
+    }
+
+    #[test]
+    fn test_eval_played_position1() {
+        let mut engine = AlphaBetaEngine::new();
+        let _ = engine.set_position("1r2r1k1/2b2p2/p1p2p1p/P1pp3P/R6N/2P1PP2/1PK3P1/3R4 w - - 0 1");
+        println!("Evaluation: {}", AlphaBetaEngine::evaluate_board(&engine.board));
+    }
+
+    #[test]
+    fn test_eval_played_position2() {
+        let mut engine = AlphaBetaEngine::new();
+        let _ = engine.set_position("1k6/5p2/4P3/4Pp2/8/8/1K6/8 w - - 0 1");
+        println!("Evaluation: {}", AlphaBetaEngine::evaluate_board(&engine.board));
     }
 }

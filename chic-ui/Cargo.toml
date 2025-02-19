@@ -1,0 +1,23 @@
+[package]
+name = "chic"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chic-lib = { path = "../chic-lib" }
+clap.workspace = true
+lazy_static.workspace = true
+slint.workspace = true
+tabled.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2" }
+getrandom = { version = "0.2.2", features = ["js"] }
+web-time = "1.1.0"
+
+[target.'cfg(target_arch = "wasm32")'.lib]
+path = "src/main.rs"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+slint-build = "1.10.0"
