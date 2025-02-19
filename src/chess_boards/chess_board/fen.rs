@@ -1,4 +1,6 @@
-use super::{ChessBoard, ChessField, Color, Piece, PieceType, Square};
+use super::Square::Occupied;
+use super::ChessBoard;
+use super::{ChessField, Color, Piece, PieceType, Square};
 
 pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -10,7 +12,7 @@ fn parse_square(square: &str) -> Result<ChessField, String> {
     let file = square.chars().next().unwrap() as usize;
     let rank = square.chars().nth(1).unwrap() as usize;
     if ('a'..='h').contains(&(file as u8 as char)) && ('1'..='8').contains(&(rank as u8 as char)) {
-        Ok(ChessField::new(rank - '1' as usize, file - 'a' as usize))
+        Ok(ChessField::new((rank - '1' as usize) as u8, (file - 'a' as usize) as u8))
     } else {
         Err(format!("Invalid square: {}", square))
     }
@@ -93,11 +95,11 @@ pub fn from_fen(fen: &str) -> Result<ChessBoard, String> {
 
     // Parse halfmove clock
     board.halfmove_clock = parts[4]
-        .parse::<u32>()
+        .parse::<u8>()
         .map_err(|_| format!("Invalid FEN string: halfmove clock is not a valid number: {}", parts[4]))?;
 
     // Parse fullmove number
-    board.fullmove_number = parts[5].parse::<u32>().map_err(|_| {
+    board.fullmove_number = parts[5].parse::<u8>().map_err(|_| {
         format!(
             "Invalid FEN string: fullmove number is not a valid number: {}",
             parts[5]
@@ -106,6 +108,70 @@ pub fn from_fen(fen: &str) -> Result<ChessBoard, String> {
 
     Ok(board)
 }
+
+pub fn to_fen(board: &ChessBoard) -> String {
+    let mut board_representation = String::new();
+
+    for rank in (0..8).rev() {
+        let mut empty_count = 0;
+
+        for file in 0..8 {
+            match board.squares[rank][file] {
+                Occupied(piece) => {
+                    if empty_count > 0 {
+                        board_representation.push_str(&empty_count.to_string());
+                        empty_count = 0;
+                    }
+                    board_representation.push(piece.to_char());
+                }
+                Square::Empty => {
+                    empty_count += 1;
+                }
+            }
+        }
+
+        if empty_count > 0 {
+            board_representation.push_str(&empty_count.to_string());
+        }
+
+        if rank > 0 {
+            board_representation.push('/');
+        }
+    }
+
+    let active_color = if board.active_color == Color::White { "w" } else { "b" };
+
+    let mut castling = String::from("KQkq");
+    for (i, right) in board.castling_rights.iter().enumerate().rev() {
+        if *right == false {
+            castling.remove(i);
+        }
+    }
+    if castling.is_empty() {
+        castling = "-".to_string();
+    }
+
+    // Add en passant square
+    let en_passant_square = match board.en_passant {
+        Some(square) => square.as_algebraic(),
+        None => "-".to_string(),
+    };
+
+    let halfmove_clock = board.halfmove_clock;
+    let fullmove_number = board.fullmove_number;
+
+    // Construct the full FEN string
+    format!(
+        "{} {} {} {} {} {}",
+        board_representation,
+        active_color,
+        castling,
+        en_passant_square,
+        halfmove_clock,
+        fullmove_number
+    )
+}
+
 
 #[cfg(test)]
 mod test {
@@ -251,4 +317,24 @@ mod test {
 
         assert_eq!(board.castling_rights, [true, false, false, true]); // White King side, Black Queen side
     }
+
+    #[test]
+    fn test_to_fen_initial_position() {
+        let board = ChessBoard::from_fen(INITIAL_POSITION).unwrap();
+        assert_eq!(board.to_fen(), INITIAL_POSITION);
+    }
+
+    #[test]
+    fn test_to_fen_empty_board() {
+        let board = ChessBoard::from_fen("8/8/8/8/8/8/8/8 w - - 0 1").unwrap(); // Assuming there's a method to create an empty board
+        assert_eq!(board.to_fen(), "8/8/8/8/8/8/8/8 w - - 0 1");
+    }
+
+    #[test]
+    fn test_to_fen_custom_position() {
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w Kq e3 0 2";
+        let board = ChessBoard::from_fen(fen).unwrap();
+        assert_eq!(board.to_fen(), fen);
+    }
+
 }

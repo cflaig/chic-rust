@@ -1,4 +1,4 @@
-use crate::chess_board::{Color, Move};
+use crate::chess_boards::chess_board::{Color, Move};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,5 +1,5 @@
-use crate::chess_board::fen::INITIAL_POSITION;
-use crate::chess_board::Color;
+use crate::chess_boards::chess_board::fen::INITIAL_POSITION;
+use crate::chess_boards::chess_board::Color;
 use crate::engines::engine_alpha_beta::AlphaBetaEngine;
 use crate::engines::ChessEngine;
 use std::io::BufRead;

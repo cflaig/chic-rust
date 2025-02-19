@@ -1,5 +1,6 @@
-use crate::chess_board::Square::Empty;
-use crate::chess_board::{ChessBoard, Color, Move, PieceType, Square};
+use crate::chess_boards::chess_board::ChessBoard;
+use crate::chess_boards::chess_board::Square::Empty;
+use crate::chess_boards::chess_board::{Color, Move, PieceType, Square};
 use rand::prelude::SliceRandom;
 use std::time::{Duration, Instant};
 
@@ -18,9 +19,9 @@ pub fn find_best_move_with_timeout(
     let mut node_count = 0;
 
     let mut moves = board.generate_legal_moves(None);
-    if random {
-        moves.shuffle(&mut rand::thread_rng());
-    }
+    // if random {
+    //     moves.shuffle(&mut rand::thread_rng());
+    // }
     let start_time = Instant::now();
 
     for mv in moves {
@@ -28,7 +29,7 @@ pub fn find_best_move_with_timeout(
             return None;
         }
         let mut new_board = board.clone();
-        let last_capture_move = if new_board.squares[mv.to.row][mv.to.col] == Empty {
+        let last_capture_move = if new_board.squares[mv.to.row as usize][mv.to.col as usize] == Empty {
             None
         } else {
             Some(mv)
@@ -97,9 +98,9 @@ fn negamax(board: &ChessBoard, depth: i32, node_count: &mut u64, last_capture_mo
 
     let mut max_score = MIN_EVALUATION;
 
-    for (mv, _) in board.generate_pseudo_moves() {
+    for (_, mv) in board.generate_pseudo_moves() {
         let mut new_board = board.clone();
-        let last_capture_move = if new_board.squares[mv.to.row][mv.to.col] == Empty {
+        let last_capture_move = if new_board.squares[mv.to.row as usize][mv.to.col as usize] == Empty {
             None
         } else {
             Some(mv)
@@ -189,7 +190,7 @@ fn evaluate_board(board: &ChessBoard) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess_board::ChessBoard;
+    use crate::chess_boards::chess_board::ChessBoard;
 
     #[test]
     fn test_some_positions() {
