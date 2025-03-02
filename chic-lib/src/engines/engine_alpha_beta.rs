@@ -1,6 +1,7 @@
 use crate::chess_boards::chess_board::ChessBoard;
 use crate::chess_boards::chess_board::{Color, Move, PieceType};
 use crate::engines::{ChessEngine, InfoCallback};
+use std::cmp::min;
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
@@ -455,6 +456,11 @@ impl AlphaBetaEngine {
         }
     }
 
+    const DOUBLED_PAWN_PENALTY: i32 = -150;
+
+    const ISOLATED_PAWN_PENALTY: i32 = -250;
+    const BACKWARDS_PAWN_PENALTY: i32 = -75;
+    const PASSED_PAWN_BONUS: i32 = 250;
     const BISHOP_PAIR_BONUS: i32 = 300;
 
     /// Evaluates the board state and assigns a score based on material balance.
@@ -506,6 +512,14 @@ impl AlphaBetaEngine {
             black_material += Self::BISHOP_PAIR_BONUS;
         }
 
+        let mut pawn_evaluation = 0i32;
+        let mut pawns_rank = [[7u8; 10]; 2]; //The board have on each side an empty raw
+        pawn_evaluation += Self::generate_pawns_rank_and_check_on_isolated_pawn(board, Color::White, &mut pawns_rank);
+        pawn_evaluation += Self::generate_pawns_rank_and_check_on_isolated_pawn(board, Color::Black, &mut pawns_rank);
+
+        pawn_evaluation += Self::evaluate_pawns(board, &pawns_rank, Color::White);
+        pawn_evaluation += Self::evaluate_pawns(board, &pawns_rank, Color::Black);
+
         for (field, piece) in board.all_pieces_with_coordinates() {
             //Check position value
             let psq_row = match piece.color {
@@ -544,7 +558,61 @@ impl AlphaBetaEngine {
             };
         }
 
-        evaluation + white_material + white_material_pawns - black_material - black_material_pawns
+        evaluation + white_material + white_material_pawns - black_material - black_material_pawns + pawn_evaluation
+    }
+
+    fn evaluate_pawns(board: &ChessBoard, pawns_rank: &[[u8; 10]; 2], color: Color) -> i32 {
+        let mut pawn_evaluation = 0i32;
+        let pawn_rank_index = if color == Color::White { 0 } else { 1 };
+
+        for (field, _) in board.iter_pieces(color, PieceType::Pawn) {
+            let projected_row = if color == Color::White {
+                field.row
+            } else {
+                7 - field.row
+            };
+            if pawns_rank[pawn_rank_index][field.col as usize] == 7
+                && pawns_rank[pawn_rank_index][field.col as usize + 2] == 7
+            {
+                pawn_evaluation += Self::ISOLATED_PAWN_PENALTY;
+            } else if pawns_rank[pawn_rank_index][field.col as usize] > projected_row
+                && pawns_rank[pawn_rank_index][field.col as usize + 2] > projected_row
+            {
+                pawn_evaluation += Self::BACKWARDS_PAWN_PENALTY;
+            }
+            if pawns_rank[1 - pawn_rank_index][field.col as usize] >= 7 - projected_row
+                && pawns_rank[1 - pawn_rank_index][field.col as usize + 1] >= 7 - projected_row
+                && pawns_rank[1 - pawn_rank_index][field.col as usize + 2] >= 7 - projected_row
+            {
+                pawn_evaluation += projected_row as i32 * Self::PASSED_PAWN_BONUS;
+            }
+        }
+        pawn_evaluation * if color == Color::White { 1 } else { -1 }
+    }
+
+    fn generate_pawns_rank_and_check_on_isolated_pawn(
+        board: &ChessBoard,
+        color: Color,
+        pawns_rank: &mut [[u8; 10]; 2],
+    ) -> i32 {
+        let mut pawn_evaluation = 0i32;
+        let pawn_rank_index = if color == Color::White { 0 } else { 1 };
+
+        for (field, _) in board.iter_pieces(color, PieceType::Pawn) {
+            let projected_row = if color == Color::White {
+                field.row
+            } else {
+                7 - field.row
+            };
+            if pawns_rank[pawn_rank_index][field.col as usize + 1] != 7 {
+                pawn_evaluation += Self::DOUBLED_PAWN_PENALTY;
+                pawns_rank[pawn_rank_index][field.col as usize + 1] =
+                    min(pawns_rank[pawn_rank_index][field.col as usize + 1], projected_row);
+            } else {
+                pawns_rank[pawn_rank_index][field.col as usize + 1] = projected_row;
+            }
+        }
+        pawn_evaluation * if color == Color::White { 1 } else { -1 }
     }
 }
 
