@@ -112,7 +112,8 @@ impl ChessEngine for AlphaBetaEngine {
                     pv,
                 );
                 self.last_pvs = self.principal_variation[0].0[0..self.principal_variation[0].1]
-                    .iter().copied()
+                    .iter()
+                    .copied()
                     .collect();
 
                 depth += 1; // Increase the depth for the next iteration
@@ -492,12 +493,16 @@ impl AlphaBetaEngine {
             * 1_000;
 
         if board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop) + 1]
-            - board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)] > 1 {
+            - board.white_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)]
+            > 1
+        {
             white_material += Self::BISHOP_PAIR_BONUS;
         }
 
         if board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop) + 1]
-            - board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)] > 1 {
+            - board.black_pieces[AlphaBetaEngine::get_piece_type_index(&PieceType::Bishop)]
+            > 1
+        {
             black_material += Self::BISHOP_PAIR_BONUS;
         }
 

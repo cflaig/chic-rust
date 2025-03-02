@@ -126,7 +126,6 @@ impl ChessField {
     pub fn as_algebraic(&self) -> String {
         to_algebraic_square(self.row, self.col)
     }
-
 }
 
 impl Move {

@@ -1,5 +1,5 @@
 use super::Square::Occupied;
-use super::{ChessBoard, Color, Move, PieceType, Square, ChessField};
+use super::{ChessBoard, ChessField, Color, Move, PieceType, Square};
 use std::collections::BinaryHeap;
 
 const NO_CAPTURE: i32 = 0;
@@ -24,8 +24,8 @@ impl ChessBoard {
         let mut all_moves: Vec<(i32, Move)> = Vec::with_capacity(128);
 
         for (field, _piece) in self.pieces_with_coordinates() {
-                all_moves.extend(self.generate_pseudo_moves_from_position(field.row, field.col));
-            }
+            all_moves.extend(self.generate_pseudo_moves_from_position(field.row, field.col));
+        }
 
         all_moves
     }
@@ -230,12 +230,7 @@ impl ChessBoard {
         moves
     }
 
-    fn generate_moves_from_directions(
-        &self,
-        row: u8,
-        col: u8,
-        directions: &[(isize, isize)],
-    ) -> Vec<(i32, Move)> {
+    fn generate_moves_from_directions(&self, row: u8, col: u8, directions: &[(isize, isize)]) -> Vec<(i32, Move)> {
         let mut moves = Vec::new();
 
         match self.squares[row as usize][col as usize] {
@@ -349,26 +344,26 @@ impl ChessBoard {
         });
     }
 
-    pub fn generate_capture_moves(&self) -> Vec<(i32,Move)> {
+    pub fn generate_capture_moves(&self) -> Vec<(i32, Move)> {
         let mut capture_moves = Vec::new();
 
         for (field, _piece) in self.pieces_with_coordinates() {
+            // Only process pieces of the active color
+            if let Square::Occupied(piece) = self.squares[field.row as usize][field.col as usize] {
+                if piece.color == self.active_color {
+                    let piece_moves = self.generate_pseudo_moves_from_position(field.row, field.col);
 
-                // Only process pieces of the active color
-                if let Square::Occupied(piece) = self.squares[field.row as usize][field.col as usize] {
-                    if piece.color == self.active_color {
-                        let piece_moves = self.generate_pseudo_moves_from_position(field.row, field.col);
-
-                        // Filter for capture moves
-                        for mv in piece_moves {
-                            if let Square::Occupied(target_piece) = self.squares[mv.1.to.row as usize][mv.1.to.col as usize] {
-                                if target_piece.color != self.active_color {
-                                    capture_moves.push(mv);
-                                }
+                    // Filter for capture moves
+                    for mv in piece_moves {
+                        if let Square::Occupied(target_piece) = self.squares[mv.1.to.row as usize][mv.1.to.col as usize]
+                        {
+                            if target_piece.color != self.active_color {
+                                capture_moves.push(mv);
                             }
                         }
                     }
                 }
+            }
         }
         capture_moves
     }
@@ -436,7 +431,10 @@ mod tests {
     fn test_generate_pawn_moves_pseudo_legal() {
         // Test simple pawn moves. Pawn at e4 can move forward to e5
         let board = ChessBoard::from_fen("8/8/8/8/4P3/8/8/8 w - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e4").into_iter(), vec!["e4e5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e4").into_iter(),
+            vec!["e4e5"],
+        );
 
         // Test blocked pawn a3 by a4
         let board = ChessBoard::from_fen("8/8/8/8/P7/P7/8/8 w - - 0 1").unwrap();
@@ -447,16 +445,25 @@ mod tests {
 
         // White pawn at e5 can capture en passant at f6 and capture at d6 and make a move to 46
         let expected_moves = vec!["e5d6", "e5e6", "e5f6"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e5").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e5").into_iter(),
+            expected_moves,
+        );
 
         // Move pawn on b2 and black a3 and c3
         let board = ChessBoard::from_fen("8/8/8/8/8/p1p5/1P6/8 w - - 0 1").unwrap();
         let expected_moves = vec!["b2b3", "b2b4", "b2a3", "b2c3"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("b2").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("b2").into_iter(),
+            expected_moves,
+        );
 
         // Move black pawn on a6 to a5
         let board = ChessBoard::from_fen("8/8/p7/8/8/8/8/8 b - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a6").into_iter(), vec!["a6a5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a6").into_iter(),
+            vec!["a6a5"],
+        );
 
         // Test blocked blacked pawn a6 by a5
         let board = ChessBoard::from_fen("8/8/p7/p7/8/8/8/8 b - - 0 1").unwrap();
@@ -464,15 +471,24 @@ mod tests {
 
         // Test single and double step of blacked pawn a7
         let board = ChessBoard::from_fen("8/p7/8/8/8/8/8/8 b - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a7").into_iter(), vec!["a7a6", "a7a5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a7").into_iter(),
+            vec!["a7a6", "a7a5"],
+        );
 
         // Test single move of blacked pawn a7 and double step is blocked
         let board = ChessBoard::from_fen("8/p7/8/p7/8/8/8/8 b - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a7").into_iter(), vec!["a7a6"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a7").into_iter(),
+            vec!["a7a6"],
+        );
 
         // Test pawn move on a7. Capture on b6 is not allowed by same color
         let board = ChessBoard::from_fen("8/p7/1p6/8/8/8/8/8 b - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a7").into_iter(), vec!["a7a6", "a7a5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a7").into_iter(),
+            vec!["a7a6", "a7a5"],
+        );
 
         // Test pawn move on a7 with capture on b6
         let board = ChessBoard::from_fen("8/p7/1P6/8/8/8/8/8 b - - 0 1").unwrap();
@@ -515,20 +531,32 @@ mod tests {
         // White knight at d4 can move to 8 possible squares
         let board = ChessBoard::from_fen("8/8/8/8/3N4/8/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["d4b3", "d4c2", "d4e2", "d4f3", "d4f5", "d4e6", "d4c6", "d4b5"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d4").into_iter(),
+            expected_moves,
+        );
 
         // Black knight at d4 can move to 8 possible squares incl. one capture
         let board = ChessBoard::from_fen("8/8/8/5N2/3n4/8/8/8 b - - 0 1").unwrap();
         let expected_moves = vec!["d4b3", "d4c2", "d4e2", "d4f3", "d4f5", "d4e6", "d4c6", "d4b5"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d4").into_iter(),
+            expected_moves,
+        );
 
         // White knight at a3 with blocked fields
         let board = ChessBoard::from_fen("8/8/8/1rn5/2r5/N7/2B5/1Q6 w - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a3").into_iter(), vec!["a3c4", "a3b5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a3").into_iter(),
+            vec!["a3c4", "a3b5"],
+        );
 
         // Black knight knight at a3 with blocked fields
         let board = ChessBoard::from_fen("8/8/8/1RN5/2R5/n7/2b5/1q6 b - - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a3").into_iter(), vec!["a3c4", "a3b5"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a3").into_iter(),
+            vec!["a3c4", "a3b5"],
+        );
     }
 
     #[test]
@@ -539,12 +567,18 @@ mod tests {
             "d4a7", "d4b6", "d4c5", "d4e3", "d4f2", "d4g1", //first diagonal
             "d4a1", "d4b2", "d4c3", "d4e5", "d4f6", "d4g7", "d4h8",
         ];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d4").into_iter(),
+            expected_moves,
+        );
 
         // Test bishop with a capture and a blocked square
         let board = ChessBoard::from_fen("8/6r1/5B2/8/3P4/8/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["f6d8", "f6e7", "f6g5", "f6h4", "f6e5", "f6g7"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("f6").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("f6").into_iter(),
+            expected_moves,
+        );
 
         // Test black bishop moves with 2 diagonals
         let board = ChessBoard::from_fen("8/8/8/8/8/3b4/8/8 b - - 0 1").unwrap();
@@ -552,12 +586,18 @@ mod tests {
             "d3a6", "d3b5", "d3c4", "d3e2", "d3f1", //first diagonal
             "d3b1", "d3c2", "d3e4", "d3f5", "d3g6", "d3h7",
         ];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d3").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d3").into_iter(),
+            expected_moves,
+        );
 
         // Test black bishop with a capture and a blocked square
         let board = ChessBoard::from_fen("8/6R1/5b2/8/3p4/8/8/8 b - - 0 1").unwrap();
         let expected_moves = vec!["f6d8", "f6e7", "f6g5", "f6h4", "f6e5", "f6g7"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("f6").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("f6").into_iter(),
+            expected_moves,
+        );
     }
 
     #[test]
@@ -568,12 +608,18 @@ mod tests {
             "d4d1", "d4d2", "d4d3", "d4d5", "d4d6", "d4d7", "d4d8", "d4a4", "d4b4", "d4c4", "d4e4", "d4f4", "d4g4",
             "d4h4",
         ];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d4").into_iter(),
+            expected_moves,
+        );
 
         // Test black rook with a capture and blocked squares
         let board = ChessBoard::from_fen("8/8/8/8/3bR3/8/4N3/8 w - - 0 1").unwrap();
         let expected_moves = vec!["e4e3", "e4e5", "e4e6", "e4e7", "e4e8", "e4d4", "e4f4", "e4g4", "e4h4"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e4").into_iter(),
+            expected_moves,
+        );
 
         // Test black rook moves
         let board = ChessBoard::from_fen("8/8/8/8/8/3r4/8/8 b - - 0 1").unwrap();
@@ -581,12 +627,18 @@ mod tests {
             "d3d1", "d3d2", "d3d4", "d3d5", "d3d6", "d3d7", "d3d8", "d3a3", "d3b3", "d3c3", "d3e3", "d3f3", "d3g3",
             "d3h3",
         ];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d3").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d3").into_iter(),
+            expected_moves,
+        );
 
         // Test black rook with a capture and blocked squares
         let board = ChessBoard::from_fen("8/8/8/8/3Br3/8/4n3/8 b - - 0 1").unwrap();
         let expected_moves = vec!["e4e3", "e4e5", "e4e6", "e4e7", "e4e8", "e4d4", "e4f4", "e4g4", "e4h4"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e4").into_iter(),
+            expected_moves,
+        );
     }
 
     #[test]
@@ -598,17 +650,26 @@ mod tests {
             "d4h4", "d4a7", "d4b6", "d4c5", "d4e3", "d4f2", "d4g1", //first diagonal
             "d4a1", "d4b2", "d4c3", "d4e5", "d4f6", "d4g7", "d4h8",
         ];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d4").into_iter(),
+            expected_moves,
+        );
 
         // Test queen move from g6 with 3 capture and a blocked square
         let board = ChessBoard::from_fen("4b1b1/6b1/4r1Q1/5P2/6B1/8/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["g6e8", "g6f7", "g6e6", "g6f6", "g6g7", "g6g5", "g6h5", "g6h6", "g6h7"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("g6").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("g6").into_iter(),
+            expected_moves,
+        );
 
         // Test queen move from a5 with 2 capture and a blocked square
         let board = ChessBoard::from_fen("8/b7/1b6/qb6/1P6/P7/8/8 b - - 0 1").unwrap();
         let expected_moves = vec!["a5a6", "a5a4", "a5a3", "a5b4"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a5").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a5").into_iter(),
+            expected_moves,
+        );
     }
 
     #[test]
@@ -616,32 +677,50 @@ mod tests {
         // Test king moves
         let board = ChessBoard::from_fen("8/8/8/8/8/3K4/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["d3c2", "d3c3", "d3c4", "d3d2", "d3d4", "d3e2", "d3e3", "d3e4"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d3").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d3").into_iter(),
+            expected_moves,
+        );
 
         // Test black king
         let board = ChessBoard::from_fen("8/8/8/8/8/3k4/8/8 b - - 0 1").unwrap();
         let expected_moves = vec!["d3c2", "d3c3", "d3c4", "d3d2", "d3d4", "d3e2", "d3e3", "d3e4"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d3").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d3").into_iter(),
+            expected_moves,
+        );
 
         // Test white king, blocked by own pieces and 3 capture
         let board = ChessBoard::from_fen("8/8/8/3ppp2/3PKP2/3PPP2/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["e4d5", "e4e5", "e4f5"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e4").into_iter(),
+            expected_moves,
+        );
 
         // Test white king, blocked by own pieces and 3 capture
         let board = ChessBoard::from_fen("8/8/8/3PPP2/3pkp2/3ppp2/8/8 b - - 0 1").unwrap();
         let expected_moves = vec!["e4d5", "e4e5", "e4f5"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e4").into_iter(),
+            expected_moves,
+        );
 
         // Test black king on h1
         let board = ChessBoard::from_fen("8/8/8/8/8/8/8/7k b - - 0 1").unwrap();
         let expected_moves = vec!["h1h2", "h1g1", "h1g2"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("h1").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("h1").into_iter(),
+            expected_moves,
+        );
 
         // Test white king on a8
         let board = ChessBoard::from_fen("K7/8/8/8/8/8/8/8 w - - 0 1").unwrap();
         let expected_moves = vec!["a8a7", "a8b8", "a8b7"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("a8").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("a8").into_iter(),
+            expected_moves,
+        );
 
         // Test white king starting position
         let board = ChessBoard::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
@@ -703,11 +782,17 @@ mod tests {
 
         // Test white king castling blocked on c and g position
         let board = ChessBoard::from_fen("r1b1k1br/pppppppp/8/8/8/8/PPPPPPPP/R1B1K1BR w KQkq - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e1").into_iter(), vec!["e1d1", "e1f1"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e1").into_iter(),
+            vec!["e1d1", "e1f1"],
+        );
 
         // Test black king castling blocked on c and g position
         let board = ChessBoard::from_fen("r1b1k1br/pppppppp/8/8/8/8/PPPPPPPP/R1B1K1BR b KQkq - 0 1").unwrap();
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e8").into_iter(), vec!["e8d8", "e8f8"]);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e8").into_iter(),
+            vec!["e8d8", "e8f8"],
+        );
 
         // Test white king castling blocked on b position
         let board = ChessBoard::from_fen("rb2k2r/pppppppp/8/8/8/8/PPPPPPPP/RB2K2R w KQkq - 0 1").unwrap();
@@ -743,12 +828,18 @@ mod tests {
         let mut board = ChessBoard::from_fen("8/4p3/8/3P4/8/8/8/8 b - - 0 1").unwrap();
         board.make_move(Move::from_algebraic("e7e5"));
         let expected_moves = vec!["d5d6", "d5e6"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d5").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d5").into_iter(),
+            expected_moves,
+        );
 
         let mut board = ChessBoard::from_fen("8/8/8/8/6p1/8/5P2/8 w - - 0 1").unwrap();
         board.make_move(Move::from_algebraic("f2f4"));
         let expected_moves = vec!["g4g3", "g4f3"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("g4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("g4").into_iter(),
+            expected_moves,
+        );
 
         let mut board = ChessBoard::from_fen("8/8/1p6/8/8/p7/PPP5/8 w - - 0 1").unwrap();
         board.make_move(Move::from_algebraic("b2b3"));
@@ -760,10 +851,14 @@ mod tests {
             ChessBoard::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1pB1P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 1 1").unwrap();
         board.make_move(Move::from_algebraic("c7c5"));
         let expected_moves = vec!["d5c6", "d5d6", "d5e6"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("d5").into_iter(), expected_moves.clone());
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("d5").into_iter(),
+            expected_moves.clone(),
+        );
         let generated_moves: Vec<_> = board
             .generate_legal_moves(None)
-            .into_iter().map(|m| m.as_algebraic())
+            .into_iter()
+            .map(|m| m.as_algebraic())
             .collect();
 
         for mv in expected_moves {
@@ -780,11 +875,17 @@ mod tests {
         let field = ChessField::from_algebraic("c5");
         assert_eq!(board.squares[field.row as usize][field.col as usize], Square::Empty);
         let expected_moves = vec!["e7c5", "e7d6", "e7d8", "e7f8"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("e7").into_iter(), expected_moves.clone());
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("e7").into_iter(),
+            expected_moves.clone(),
+        );
 
         let board = ChessBoard::from_fen("r2q1rk1/pP1p2pp/Q4n2/bb2p3/1pp5/1BN2NBn/pPPP1PPP/R3K2R b KQ - 1 2").unwrap();
         let expected_moves = vec!["b4c3"];
-        assert_moves(board.generate_pseudo_moves_from_algebraic("b4").into_iter(), expected_moves.clone());
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("b4").into_iter(),
+            expected_moves.clone(),
+        );
     }
 
     #[test]
@@ -794,11 +895,15 @@ mod tests {
         let expected_moves = vec!["g4g5", "g4h5"];
         let mut debug_moves: Vec<_> = board
             .generate_legal_moves(None)
-            .into_iter().map(|m| m.as_algebraic())
+            .into_iter()
+            .map(|m| m.as_algebraic())
             .collect();
         debug_moves.sort();
         println!("{:?}", debug_moves.len());
         println!("{:?}", debug_moves);
-        assert_moves(board.generate_pseudo_moves_from_algebraic("g4").into_iter(), expected_moves);
+        assert_moves(
+            board.generate_pseudo_moves_from_algebraic("g4").into_iter(),
+            expected_moves,
+        );
     }
 }

@@ -1,8 +1,8 @@
 pub mod chess_board;
 pub mod perft;
 
-use chess_board::{ChessField, Piece};
 use chess_board::Move;
+use chess_board::{ChessField, Piece};
 
 pub trait Board {
     fn make_move(&mut self, mv: &Move) -> Result<(), &'static str>;

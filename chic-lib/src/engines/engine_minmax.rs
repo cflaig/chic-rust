@@ -141,9 +141,7 @@ fn quiescence_search(board: &ChessBoard, node_count: &mut u64, &last_move: &Move
 
     //println!("Number of Capture Moves: {}", moves.len() );
 
-    for mv in moves
-        .filter(|mv| mv.to.row == last_move.to.row && mv.to.col == last_move.to.col)
-    {
+    for mv in moves.filter(|mv| mv.to.row == last_move.to.row && mv.to.col == last_move.to.col) {
         let mut new_board = board.clone();
         new_board.make_move(mv);
         let score = -quiescence_search(&new_board, node_count, &last_move);

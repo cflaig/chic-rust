@@ -1,5 +1,5 @@
-use super::Square::Occupied;
 use super::ChessBoard;
+use super::Square::Occupied;
 use super::{ChessField, Color, Piece, PieceType, Square};
 
 pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -12,7 +12,10 @@ fn parse_square(square: &str) -> Result<ChessField, String> {
     let file = square.chars().next().unwrap() as usize;
     let rank = square.chars().nth(1).unwrap() as usize;
     if ('a'..='h').contains(&(file as u8 as char)) && ('1'..='8').contains(&(rank as u8 as char)) {
-        Ok(ChessField::new((rank - '1' as usize) as u8, (file - 'a' as usize) as u8))
+        Ok(ChessField::new(
+            (rank - '1' as usize) as u8,
+            (file - 'a' as usize) as u8,
+        ))
     } else {
         Err(format!("Invalid square: {}", square))
     }
@@ -163,15 +166,9 @@ pub fn to_fen(board: &ChessBoard) -> String {
     // Construct the full FEN string
     format!(
         "{} {} {} {} {} {}",
-        board_representation,
-        active_color,
-        castling,
-        en_passant_square,
-        halfmove_clock,
-        fullmove_number
+        board_representation, active_color, castling, en_passant_square, halfmove_clock, fullmove_number
     )
 }
-
 
 #[cfg(test)]
 mod test {
@@ -336,5 +333,4 @@ mod test {
         let board = ChessBoard::from_fen(fen).unwrap();
         assert_eq!(board.to_fen(), fen);
     }
-
 }
