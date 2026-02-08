@@ -12,10 +12,9 @@ clap = { version = "4.5.31", features = ["cargo"] }
 lazy_static = "1.5.0"
 rand = "0.9.0"
 rand_pcg = "0.9.0"
-slint = "1.10.0"
 tabled = "0.18.0"
 
 [workspace.target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2" }
-getrandom = { version = "0.2.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
 web-time = "1.1.0"

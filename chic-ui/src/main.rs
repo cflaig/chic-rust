@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-mod ui;
+mod app;
+mod assets;
+mod engine;
 
 use clap::arg;
 use clap::command;
@@ -13,10 +15,6 @@ use chic_lib::engines::uci::run_uci_interface;
 use tabled::settings::Style;
 use tabled::Table;
 use tabled::Tabled;
-
-use ui::setup_ui;
-
-slint::include_modules!();
 
 const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -85,11 +83,56 @@ fn main() {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen(start))]
+#[cfg(not(target_arch = "wasm32"))]
 fn play_with_ui() {
     let fen = INITIAL_POSITION;
-    //let fen = "r2k2nr/3n3p/3b1pp1/4p3/p3P2P/P2RBN2/1PP2PP1/2K4R w - - 0 20";
-    setup_ui(fen);
+
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 850.0])
+            .with_title("Chic Chess"),
+        ..Default::default()
+    };
+
+    let _ = eframe::run_native(
+        "Chic Chess",
+        native_options,
+        Box::new(|cc| Ok(Box::new(app::ChicApp::new(cc, Some(fen.to_string()))))),
+    );
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+fn play_with_ui() {
+    use wasm_bindgen::JsCast;
+
+    // Setup logging for WASM
+    console_error_panic_hook::set_once();
+
+    let fen = INITIAL_POSITION;
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("chic_canvas")
+            .expect("No canvas element with id 'chic_canvas'")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("Element is not a canvas");
+
+        eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(app::ChicApp::new(cc, Some(fen.to_string()))))),
+            )
+            .await
+            .expect("Failed to start eframe");
+    });
 }
 
 #[derive(Tabled)]
