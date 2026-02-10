@@ -26,6 +26,7 @@ pub struct AlphaBetaEngine {
     aborted: Arc<AtomicBool>,
     last_pvs: Vec<Move>,
     repetition_map: BTreeMap<u64, u8>,
+    killer_moves: [[Option<Move>; 2]; MAX_PLY], // 2 killer moves per ply
 }
 
 impl AlphaBetaEngine {
@@ -38,6 +39,7 @@ impl AlphaBetaEngine {
             aborted: Arc::new(AtomicBool::new(false)),
             last_pvs: Vec::new(),
             repetition_map: BTreeMap::new(),
+            killer_moves: [[None; 2]; MAX_PLY],
         }
     }
 
@@ -79,6 +81,7 @@ impl ChessEngine for AlphaBetaEngine {
         let mut total_node_count = 0;
 
         self.aborted.store(false, Relaxed);
+        self.clear_killer_moves();
 
         let start_time = Instant::now();
         let mut depth = 1;
@@ -251,7 +254,26 @@ impl AlphaBetaEngine {
             None
         };
 
-        let moves = board.generate_legal_moves(last_pv_move);
+        let mut moves: Vec<(i32, Move)> = board.generate_legal_moves(last_pv_move).into_vec();
+
+        // Apply killer move bonuses
+        for (score, mv) in moves.iter_mut() {
+            // Check if this move is a killer move
+            if let Some(killer1) = self.killer_moves[ply][0] {
+                if *mv == killer1 {
+                    *score = 9500; // Just below good captures (10000+), above bad captures
+                    continue;
+                }
+            }
+            if let Some(killer2) = self.killer_moves[ply][1] {
+                if *mv == killer2 {
+                    *score = 9400; // Slightly lower than killer1
+                }
+            }
+        }
+
+        // Re-sort after applying killer bonuses
+        moves.sort_by(|a, b| b.0.cmp(&a.0));
         if moves.is_empty() {
             // Handle checkmate or stalemate
             if board.is_checkmate() {
@@ -261,14 +283,42 @@ impl AlphaBetaEngine {
             }
         }
 
-        for mv in moves {
+        let mut move_count = 0;
+        for (_score, mv) in moves {
             let mut new_board = board.clone();
             new_board.make_move(mv);
             let hash = new_board.hash;
             self.insert_hash(hash);
-            let score = match self.negamax(
+
+            // Late Move Reductions (LMR)
+            // Reduce search depth for moves that are likely not best
+            let mut reduction = 0;
+            let is_capture = board.squares[mv.to.row as usize][mv.to.col as usize] != crate::chess_boards::chess_board::Square::Empty;
+            let gives_check = new_board.is_in_check();
+
+            // Apply LMR if:
+            // - Not in PV line
+            // - Not first few moves (likely to be good)
+            // - Sufficient depth remaining
+            // - Move is not tactical (not capture, not check, not promotion)
+            if !is_principal_variation
+                && move_count >= 3
+                && depth >= 3
+                && !is_capture
+                && !gives_check
+                && mv.promotion.is_none() {
+                // Calculate reduction based on depth and move number
+                reduction = if move_count >= 6 && depth >= 5 {
+                    2
+                } else {
+                    1
+                };
+            }
+
+            // Search with reduced depth first
+            let mut score = match self.negamax(
                 &new_board,
-                depth - 1,
+                depth - 1 - reduction,
                 -beta,
                 -alpha,
                 ply + 1,
@@ -282,6 +332,28 @@ impl AlphaBetaEngine {
                 }
                 Some(score) => -score,
             };
+
+            // Re-search at full depth if reduced search suggests the move is good
+            if reduction > 0 && score > alpha {
+                score = match self.negamax(
+                    &new_board,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    ply + 1,
+                    false, // Not PV anymore after reduction
+                    deadline,
+                    node_count,
+                ) {
+                    None => {
+                        self.remove_hash(&hash);
+                        return None;
+                    }
+                    Some(score) => -score,
+                };
+            }
+
+            move_count += 1;
             is_principal_variation = false;
             self.remove_hash(&hash);
             if score > max_score {
@@ -290,7 +362,10 @@ impl AlphaBetaEngine {
                     alpha = score;
                     self.save_principal_variation(mv, depth as usize, ply);
                     if alpha >= beta {
-                        // Beta cutoff fail soft
+                        // Beta cutoff - update killer moves for quiet moves
+                        if !is_capture && mv.promotion.is_none() {
+                            self.update_killer_moves(mv, ply);
+                        }
                         break;
                     }
                 }
@@ -325,6 +400,23 @@ impl AlphaBetaEngine {
             self.principal_variation[ply].0[i + 1] = self.principal_variation[ply + 1].0[i];
         }
         self.principal_variation[ply].1 = self.principal_variation[ply + 1].1 + 1;
+    }
+
+    fn update_killer_moves(&mut self, mv: Move, ply: usize) {
+        // Don't store if it's already the first killer
+        if let Some(killer1) = self.killer_moves[ply][0] {
+            if killer1 == mv {
+                return;
+            }
+        }
+
+        // Shift: killer1 -> killer2, new move -> killer1
+        self.killer_moves[ply][1] = self.killer_moves[ply][0];
+        self.killer_moves[ply][0] = Some(mv);
+    }
+
+    fn clear_killer_moves(&mut self) {
+        self.killer_moves = [[None; 2]; MAX_PLY];
     }
 
     fn quiescence_search_prunning(

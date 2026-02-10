@@ -408,6 +408,12 @@ impl<I: std::cmp::Ord> LazySortedMoves<I> {
     }
 }
 
+impl<I> LazySortedMoves<I> {
+    pub fn into_vec(self) -> Vec<(i32, I)> {
+        self.heap.into_vec()
+    }
+}
+
 impl<I> Iterator for LazySortedMoves<I>
 where
     I: Ord,

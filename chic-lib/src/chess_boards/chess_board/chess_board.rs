@@ -584,6 +584,14 @@ impl ChessBoard {
     }
 
     #[allow(dead_code)]
+    pub fn is_in_check(&self) -> bool {
+        if let Some(king_pos) = self.find_king_position(self.active_color) {
+            self.is_square_attacked_by_color(king_pos.row, king_pos.col, self.active_color.opposite())
+        } else {
+            false
+        }
+    }
+
     pub fn is_checkmate(&self) -> bool {
         // Step 1: Ensure the active player's king is in check
         if let Some(king_pos) = self.find_king_position(self.active_color) {
